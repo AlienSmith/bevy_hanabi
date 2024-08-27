@@ -12,8 +12,8 @@ use bevy::{
     },
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
-#[cfg(feature = "examples_world_inspector")]
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
+// #[cfg(feature = "examples_world_inspector")]
+// use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use bevy_hanabi::prelude::*;
 
@@ -46,8 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .add_plugins(HanabiPlugin);
 
-    #[cfg(feature = "examples_world_inspector")]
-    app.add_plugins(WorldInspectorPlugin::default());
+    // #[cfg(feature = "examples_world_inspector")]
+    // app.add_plugins(WorldInspectorPlugin::default());
 
     app.add_systems(Startup, setup)
         .add_systems(Update, (bevy::window::close_on_esc, update_plane))

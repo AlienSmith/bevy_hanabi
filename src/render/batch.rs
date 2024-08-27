@@ -5,8 +5,8 @@ use bevy::{
     render::render_resource::{Buffer, CachedComputePipelineId},
 };
 
-#[cfg(feature = "2d")]
-use bevy::utils::FloatOrd;
+//#[cfg(feature = "2d")]
+//use bevy::utils::FloatOrd;
 
 use crate::{EffectAsset, EffectShader, ParticleLayout, PropertyLayout};
 
@@ -82,8 +82,8 @@ pub(crate) struct EffectDrawBatch {
     pub batches_entity: Entity,
     /// For 2D rendering, the Z coordinate used as the sort key. Ignored for 3D
     /// rendering.
-    #[cfg(feature = "2d")]
-    pub z_sort_key_2d: FloatOrd,
+    // #[cfg(feature = "2d")]
+    // pub z_sort_key_2d: FloatOrd,
     /// For 3d rendering, the position of the emitter so we can compute distance
     /// to camera. Ignored for 2D rendering.
     #[cfg(feature = "3d")]
@@ -164,7 +164,6 @@ pub(crate) struct BatchesInput {
     /// Serialized property data.
     // FIXME - Contains a single effect's data; should handle multiple ones.
     pub property_data: Option<Vec<u8>>,
-    /// Sort key, for 2D only.
-    #[cfg(feature = "2d")]
-    pub z_sort_key_2d: FloatOrd,
+    // #[cfg(feature = "2d")]
+    // pub z_sort_key_2d: FloatOrd,
 }

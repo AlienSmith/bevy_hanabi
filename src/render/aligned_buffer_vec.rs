@@ -197,6 +197,7 @@ impl<T: Pod + ShaderType + ShaderSize> AlignedBufferVec<T> {
             let aligned_size = self.aligned_size * self.values.len();
             trace!("aligned_buffer: size={}", aligned_size);
             let mut aligned_buffer: Vec<u8> = vec![0; aligned_size];
+            //it needs this logic here to add padding.
             for i in 0..self.values.len() {
                 let src: &[u8] = cast_slice(std::slice::from_ref(&self.values[i]));
                 let dst_offset = i * self.aligned_size;

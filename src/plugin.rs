@@ -1,5 +1,5 @@
-#[cfg(feature = "2d")]
-use bevy::core_pipeline::core_2d::Transparent2d;
+//#[cfg(feature = "2d")]
+//use bevy::core_pipeline::core_2d::Transparent2d;
 #[cfg(feature = "3d")]
 use bevy::core_pipeline::core_3d::{AlphaMask3d, Transparent3d};
 use bevy::{
@@ -155,6 +155,7 @@ impl HanabiPlugin {
                 &render_group_indirect_padding_code,
             )
             .replace("{{PARTICLE_GROUP_PADDING}}", &particle_group_padding_code);
+        warn!("Create common shader:\n{}", common_code);
         Shader::from_wgsl(
             common_code,
             std::path::Path::new(file!())
@@ -301,16 +302,16 @@ impl Plugin for HanabiPlugin {
         // during the main 2D/3D pass, at the Transparent2d/3d phase, after the
         // opaque objects have been rendered (or, rather, commands for those
         // have been recorded).
-        #[cfg(feature = "2d")]
-        {
-            let draw_particles = DrawEffects::new(&mut render_app.world);
-            render_app
-                .world
-                .get_resource::<DrawFunctions<Transparent2d>>()
-                .unwrap()
-                .write()
-                .add(draw_particles);
-        }
+        // #[cfg(feature = "2d")]
+        // {
+        //     let draw_particles = DrawEffects::new(&mut render_app.world);
+        //     render_app
+        //         .world
+        //         .get_resource::<DrawFunctions<Transparent2d>>()
+        //         .unwrap()
+        //         .write()
+        //         .add(draw_particles);
+        // }
         #[cfg(feature = "3d")]
         {
             let draw_particles = DrawEffects::new(&mut render_app.world);

@@ -170,11 +170,8 @@
 
 #[cfg(feature = "2d")]
 use bevy::utils::FloatOrd;
-use bevy::{
-    prelude::*,
-    utils::{thiserror::Error, HashSet},
-};
-use serde::{Deserialize, Serialize};
+use bevy::{ prelude::*, utils::{ thiserror::Error, HashSet } };
+use serde::{ Deserialize, Serialize };
 use std::fmt::Write as _; // import without risk of name clashing
 
 mod asset;
@@ -192,17 +189,17 @@ mod time;
 #[cfg(test)]
 mod test_utils;
 
-pub use asset::{AlphaMode, EffectAsset, MotionIntegration, SimulationCondition};
+pub use asset::{ AlphaMode, EffectAsset, MotionIntegration, SimulationCondition };
 pub use attributes::*;
 pub use bundle::ParticleEffectBundle;
-pub use gradient::{Gradient, GradientKey};
+pub use gradient::{ Gradient, GradientKey };
 pub use graph::*;
 pub use modifier::*;
-pub use plugin::{EffectSystems, HanabiPlugin};
+pub use plugin::{ EffectSystems, HanabiPlugin };
 pub use properties::*;
-pub use render::{LayoutFlags, ShaderCache};
-pub use spawn::{tick_spawners, CpuValue, EffectSpawner, Random, Spawner};
-pub use time::{EffectSimulation, EffectSimulationTime};
+pub use render::{ LayoutFlags, ShaderCache };
+pub use spawn::{ tick_spawners, CpuValue, EffectSpawner, Random, Spawner };
+pub use time::{ EffectSimulation, EffectSimulationTime };
 
 #[allow(missing_docs)]
 pub mod prelude {
@@ -224,7 +221,7 @@ compile_error!(
 // TODO - filler for usize.next_multiple_of()
 // https://github.com/rust-lang/rust/issues/88581
 pub(crate) fn next_multiple_of(value: usize, align: usize) -> usize {
-    assert!(align & (align - 1) == 0); // power of 2
+    assert!((align & (align - 1)) == 0); // power of 2
     let count = (value + align - 1) / align;
     count * align
 }
@@ -276,11 +273,7 @@ impl ToWgslString for f64 {
 
 impl ToWgslString for Vec2 {
     fn to_wgsl_string(&self) -> String {
-        format!(
-            "vec2<f32>({0},{1})",
-            self.x.to_wgsl_string(),
-            self.y.to_wgsl_string()
-        )
+        format!("vec2<f32>({0},{1})", self.x.to_wgsl_string(), self.y.to_wgsl_string())
     }
 }
 
@@ -309,21 +302,13 @@ impl ToWgslString for Vec4 {
 
 impl ToWgslString for bool {
     fn to_wgsl_string(&self) -> String {
-        if *self {
-            "true".to_string()
-        } else {
-            "false".to_string()
-        }
+        if *self { "true".to_string() } else { "false".to_string() }
     }
 }
 
 impl ToWgslString for BVec2 {
     fn to_wgsl_string(&self) -> String {
-        format!(
-            "vec2<bool>({0},{1})",
-            self.x.to_wgsl_string(),
-            self.y.to_wgsl_string()
-        )
+        format!("vec2<bool>({0},{1})", self.x.to_wgsl_string(), self.y.to_wgsl_string())
     }
 }
 
@@ -358,11 +343,7 @@ impl ToWgslString for i32 {
 
 impl ToWgslString for IVec2 {
     fn to_wgsl_string(&self) -> String {
-        format!(
-            "vec2<i32>({0},{1})",
-            self.x.to_wgsl_string(),
-            self.y.to_wgsl_string()
-        )
+        format!("vec2<i32>({0},{1})", self.x.to_wgsl_string(), self.y.to_wgsl_string())
     }
 }
 
@@ -397,11 +378,7 @@ impl ToWgslString for u32 {
 
 impl ToWgslString for UVec2 {
     fn to_wgsl_string(&self) -> String {
-        format!(
-            "vec2<u32>({0},{1})",
-            self.x.to_wgsl_string(),
-            self.y.to_wgsl_string()
-        )
+        format!("vec2<u32>({0},{1})", self.x.to_wgsl_string(), self.y.to_wgsl_string())
     }
 }
 
@@ -432,11 +409,8 @@ impl ToWgslString for CpuValue<f32> {
     fn to_wgsl_string(&self) -> String {
         match self {
             Self::Single(x) => x.to_wgsl_string(),
-            Self::Uniform((a, b)) => format!(
-                "(frand() * ({1} - {0}) + {0})",
-                a.to_wgsl_string(),
-                b.to_wgsl_string(),
-            ),
+            Self::Uniform((a, b)) =>
+                format!("(frand() * ({1} - {0}) + {0})", a.to_wgsl_string(), b.to_wgsl_string()),
         }
     }
 }
@@ -445,11 +419,8 @@ impl ToWgslString for CpuValue<Vec2> {
     fn to_wgsl_string(&self) -> String {
         match self {
             Self::Single(v) => v.to_wgsl_string(),
-            Self::Uniform((a, b)) => format!(
-                "(frand2() * ({1} - {0}) + {0})",
-                a.to_wgsl_string(),
-                b.to_wgsl_string(),
-            ),
+            Self::Uniform((a, b)) =>
+                format!("(frand2() * ({1} - {0}) + {0})", a.to_wgsl_string(), b.to_wgsl_string()),
         }
     }
 }
@@ -458,11 +429,8 @@ impl ToWgslString for CpuValue<Vec3> {
     fn to_wgsl_string(&self) -> String {
         match self {
             Self::Single(v) => v.to_wgsl_string(),
-            Self::Uniform((a, b)) => format!(
-                "(frand3() * ({1} - {0}) + {0})",
-                a.to_wgsl_string(),
-                b.to_wgsl_string(),
-            ),
+            Self::Uniform((a, b)) =>
+                format!("(frand3() * ({1} - {0}) + {0})", a.to_wgsl_string(), b.to_wgsl_string()),
         }
     }
 }
@@ -471,11 +439,8 @@ impl ToWgslString for CpuValue<Vec4> {
     fn to_wgsl_string(&self) -> String {
         match self {
             Self::Single(v) => v.to_wgsl_string(),
-            Self::Uniform((a, b)) => format!(
-                "(frand4() * ({1} - {0}) + {0})",
-                a.to_wgsl_string(),
-                b.to_wgsl_string(),
-            ),
+            Self::Uniform((a, b)) =>
+                format!("(frand4() * ({1} - {0}) + {0})", a.to_wgsl_string(), b.to_wgsl_string()),
         }
     }
 }
@@ -515,28 +480,40 @@ impl SimulationSpace {
     ///   position from simulation space to view space.
     pub fn eval(&self, context: &dyn EvalContext) -> Result<String, ExprError> {
         match context.modifier_context() {
-            ModifierContext::Init | ModifierContext::Update => match *self {
-                SimulationSpace::Global => {
-                    if !context.particle_layout().contains(Attribute::POSITION) {
-                        return Err(ExprError::GraphEvalError(format!("Global-space simulation requires that the particles have a {} attribute.", Attribute::POSITION.name())));
+            ModifierContext::Init | ModifierContext::Update =>
+                match *self {
+                    SimulationSpace::Global => {
+                        if !context.particle_layout().contains(Attribute::POSITION) {
+                            return Err(
+                                ExprError::GraphEvalError(
+                                    format!(
+                                        "Global-space simulation requires that the particles have a {} attribute.",
+                                        Attribute::POSITION.name()
+                                    )
+                                )
+                            );
+                        }
+                        Ok(
+                            format!(
+                                "particle.{} += transform[3].xyz;", // TODO: get_view_position()
+                                Attribute::POSITION.name()
+                            )
+                        )
                     }
-                    Ok(format!(
-                        "particle.{} += transform[3].xyz;", // TODO: get_view_position()
-                        Attribute::POSITION.name()
-                    ))
+                    SimulationSpace::Local => Ok("".to_string()),
                 }
-                SimulationSpace::Local => Ok("".to_string()),
-            },
-            ModifierContext::Render => Ok(match *self {
-                // TODO: cast vec3 -> vec4 auomatically
-                SimulationSpace::Global => "vec4<f32>(local_position, 1.0)",
-                // TODO: transform_world_to_view(...)
-                SimulationSpace::Local => "transform * vec4<f32>(local_position, 1.0)",
-            }
-            .to_string()),
-            _ => Err(ExprError::GraphEvalError(
-                "Invalid modifier context value.".to_string(),
-            )),
+            ModifierContext::Render =>
+                Ok(
+                    (
+                        match *self {
+                            // TODO: cast vec3 -> vec4 auomatically
+                            SimulationSpace::Global => "vec4<f32>(local_position, 1.0)",
+                            // TODO: transform_world_to_view(...)
+                            SimulationSpace::Local => "transform * vec4<f32>(local_position, 1.0)",
+                        }
+                    ).to_string()
+                ),
+            _ => Err(ExprError::GraphEvalError("Invalid modifier context value.".to_string())),
         }
     }
 }
@@ -700,11 +677,9 @@ struct EffectShaderSource {
 /// [`EffectAsset`].
 #[derive(Debug, Error)]
 enum ShaderGenerateError {
-    #[error("Expression error: {0:?}")]
-    Expr(ExprError),
+    #[error("Expression error: {0:?}")] Expr(ExprError),
 
-    #[error("Validation error: {0:?}")]
-    Validate(String),
+    #[error("Validation error: {0:?}")] Validate(String),
 }
 
 impl EffectShaderSource {
@@ -719,19 +694,25 @@ impl EffectShaderSource {
         // Particle{} struct and it needs at least one field. There's probably no use
         // case for an empty layout anyway.
         if particle_layout.size() == 0 {
-            return Err(ShaderGenerateError::Validate(format!(
-                "Asset {} has invalid empty particle layout.",
-                asset.name
-            )));
+            return Err(
+                ShaderGenerateError::Validate(
+                    format!("Asset {} has invalid empty particle layout.", asset.name)
+                )
+            );
         }
 
         // Currently the POSITION attribute is mandatory, as it's always used by the
         // render shader.
         if !particle_layout.contains(Attribute::POSITION) {
-            return Err(ShaderGenerateError::Validate(format!(
-                "The particle layout of asset {} is missing the {} attribute. Add a modifier using that attribute, for example the SetAttributeModifier.",
-                asset.name, Attribute::POSITION.name()
-            )));
+            return Err(
+                ShaderGenerateError::Validate(
+                    format!(
+                        "The particle layout of asset {} is missing the {} attribute. Add a modifier using that attribute, for example the SetAttributeModifier.",
+                        asset.name,
+                        Attribute::POSITION.name()
+                    )
+                )
+            );
         }
 
         // Generate the WGSL code declaring all the attributes inside the Particle
@@ -742,8 +723,11 @@ impl EffectShaderSource {
         // present, or a default value.
         let mut inputs_code = String::new();
         // All required attributes, except the size/color which are variadic
-        let required_attributes =
-            HashSet::from_iter([Attribute::AXIS_X, Attribute::AXIS_Y, Attribute::AXIS_Z]);
+        let required_attributes = HashSet::from_iter([
+            Attribute::AXIS_X,
+            Attribute::AXIS_Y,
+            Attribute::AXIS_Z,
+        ]);
         let mut present_attributes = HashSet::new();
         let mut has_size = false;
         let mut has_color = false;
@@ -768,8 +752,10 @@ impl EffectShaderSource {
                 }
             } else if attr == Attribute::HDR_COLOR {
                 if !has_color {
-                    inputs_code +=
-                        &format!("var color = particle.{};\n", Attribute::HDR_COLOR.name());
+                    inputs_code += &format!(
+                        "var color = particle.{};\n",
+                        Attribute::HDR_COLOR.name()
+                    );
                     has_color = true;
                 } else {
                     warn!("Attribute HDR_COLOR conflicts with another color attribute; ignored.");
@@ -827,8 +813,11 @@ impl EffectShaderSource {
 
         // Generate the shader code for the initializing shader
         let (init_code, init_extra, init_sim_space_transform_code) = {
-            let mut init_context =
-                ShaderWriter::new(ModifierContext::Init, &property_layout, &particle_layout);
+            let mut init_context = ShaderWriter::new(
+                ModifierContext::Init,
+                &property_layout,
+                &particle_layout
+            );
             for m in asset.init_modifiers() {
                 if let Err(err) = m.apply(&mut module, &mut init_context) {
                     error!("Failed to compile effect, error in init context: {:?}", err);
@@ -841,9 +830,9 @@ impl EffectShaderSource {
             // some trouble.
             for attribute in [Attribute::PREV, Attribute::NEXT] {
                 if particle_layout.contains(attribute) {
-                    init_context
-                        .main_code
-                        .push_str(&format!("particle.{} = 0xffffffffu;", attribute.name()));
+                    init_context.main_code.push_str(
+                        &format!("particle.{} = 0xffffffffu;", attribute.name())
+                    );
                 }
             }
 
@@ -854,26 +843,21 @@ impl EffectShaderSource {
                     return Err(ShaderGenerateError::Expr(err));
                 }
             };
-            (
-                init_context.main_code,
-                init_context.extra_code,
-                sim_space_transform_code,
-            )
+            (init_context.main_code, init_context.extra_code, sim_space_transform_code)
         };
 
         // Configure the init shader template, and make sure a corresponding shader
         // asset exists
-        let init_shader_source = PARTICLES_INIT_SHADER_TEMPLATE
-            .replace("{{ATTRIBUTES}}", &attributes_code)
+        let init_shader_source = PARTICLES_INIT_SHADER_TEMPLATE.replace(
+            "{{ATTRIBUTES}}",
+            &attributes_code
+        )
             .replace("{{INIT_CODE}}", &init_code)
             .replace("{{INIT_EXTRA}}", &init_extra)
             .replace("{{PROPERTIES}}", &properties_code)
             .replace("{{PROPERTIES_BINDING}}", &properties_binding_code)
-            .replace(
-                "{{SIMULATION_SPACE_TRANSFORM_PARTICLE}}",
-                &init_sim_space_transform_code,
-            );
-        trace!("Configured init shader:\n{}", init_shader_source);
+            .replace("{{SIMULATION_SPACE_TRANSFORM_PARTICLE}}", &init_sim_space_transform_code);
+        warn!("Configured init shader:\n{}", init_shader_source);
 
         let mut layout_flags = LayoutFlags::NONE;
         if asset.simulation_space == SimulationSpace::Local {
@@ -886,17 +870,17 @@ impl EffectShaderSource {
         let mut effect_particle_texture = None;
 
         let (mut update_shader_sources, mut render_shader_sources) = (vec![], vec![]);
-        for group_index in 0..(asset.capacities().len() as u32) {
+        for group_index in 0..asset.capacities().len() as u32 {
             // Generate the shader code for the update shader
             let (mut update_code, update_extra) = {
-                let mut update_context =
-                    ShaderWriter::new(ModifierContext::Update, &property_layout, &particle_layout);
+                let mut update_context = ShaderWriter::new(
+                    ModifierContext::Update,
+                    &property_layout,
+                    &particle_layout
+                );
                 for m in asset.update_modifiers_for_group(group_index) {
                     if let Err(err) = m.apply(&mut module, &mut update_context) {
-                        error!(
-                            "Failed to compile effect, error in update context: {:?}",
-                            err
-                        );
+                        error!("Failed to compile effect, error in update context: {:?}", err);
                         return Err(ShaderGenerateError::Expr(err));
                     }
                 }
@@ -928,7 +912,7 @@ impl EffectShaderSource {
                         } else {
                             "Attribute::POSITION"
                         }
-                    )
+                    );
                 }
             }
 
@@ -960,28 +944,30 @@ impl EffectShaderSource {
 
                         // In Debug, show everything to help diagnosing
                         #[cfg(debug_assertions)]
-                        return 1_f32.to_wgsl_string();
+                        return (1_f32).to_wgsl_string();
 
                         // In Release, hide everything with an error
                         #[cfg(not(debug_assertions))]
-                        return 0_f32.to_wgsl_string();
+                        return (0_f32).to_wgsl_string();
                     })
                 } else {
                     String::new()
                 };
 
-                let (flipbook_scale_code, flipbook_row_count_code) =
-                    if let Some(grid_size) = render_context.sprite_grid_size {
-                        layout_flags |= LayoutFlags::FLIPBOOK;
-                        // Note: row_count needs to be i32, not u32, because of sprite_index
-                        let flipbook_row_count_code = (grid_size.x as i32).to_wgsl_string();
-                        let flipbook_scale_code =
-                            Vec2::new(1.0 / grid_size.x as f32, 1.0 / grid_size.y as f32)
-                                .to_wgsl_string();
-                        (flipbook_scale_code, flipbook_row_count_code)
-                    } else {
-                        (String::new(), String::new())
-                    };
+                let (flipbook_scale_code, flipbook_row_count_code) = if
+                    let Some(grid_size) = render_context.sprite_grid_size
+                {
+                    layout_flags |= LayoutFlags::FLIPBOOK;
+                    // Note: row_count needs to be i32, not u32, because of sprite_index
+                    let flipbook_row_count_code = (grid_size.x as i32).to_wgsl_string();
+                    let flipbook_scale_code = Vec2::new(
+                        1.0 / (grid_size.x as f32),
+                        1.0 / (grid_size.y as f32)
+                    ).to_wgsl_string();
+                    (flipbook_scale_code, flipbook_row_count_code)
+                } else {
+                    (String::new(), String::new())
+                };
 
                 // FIXME: What about multiple textures?
                 if let Some(particle_texture) = render_context.particle_texture {
@@ -1014,15 +1000,17 @@ impl EffectShaderSource {
                 // simulate dead particles).
                 "var is_alive = true;".to_string()
             };
-            let age_code = if has_age {
-                format!(
-                    "particle.{0} = particle.{0} + sim_params.delta_time;",
-                    Attribute::AGE.name()
-                )
-            } else {
-                "".to_string()
-            } + "\n    "
-                + &alive_init_code;
+            let age_code =
+                (if has_age {
+                    format!(
+                        "particle.{0} = particle.{0} + sim_params.delta_time;",
+                        Attribute::AGE.name()
+                    )
+                } else {
+                    "".to_string()
+                }) +
+                "\n    " +
+                &alive_init_code;
 
             // Configure reaping code
             let reap_code = if has_age && has_lifetime {
@@ -1039,8 +1027,10 @@ impl EffectShaderSource {
 
             // Configure the update shader template, and make sure a corresponding shader
             // asset exists
-            let update_shader_source = PARTICLES_UPDATE_SHADER_TEMPLATE
-                .replace("{{ATTRIBUTES}}", &attributes_code)
+            let update_shader_source = PARTICLES_UPDATE_SHADER_TEMPLATE.replace(
+                "{{ATTRIBUTES}}",
+                &attributes_code
+            )
                 .replace("{{AGE_CODE}}", &age_code)
                 .replace("{{REAP_CODE}}", &reap_code)
                 .replace("{{UPDATE_CODE}}", &update_code)
@@ -1048,12 +1038,14 @@ impl EffectShaderSource {
                 .replace("{{PROPERTIES}}", &properties_code)
                 .replace("{{PROPERTIES_BINDING}}", &properties_binding_code)
                 .replace("{{GROUP_INDEX}}", &group_index_code);
-            trace!("Configured update shader:\n{}", update_shader_source);
+            warn!("Configured update shader:\n{}", update_shader_source);
 
             // Configure the render shader template, and make sure a corresponding shader
             // asset exists
-            let render_shader_source = PARTICLES_RENDER_SHADER_TEMPLATE
-                .replace("{{ATTRIBUTES}}", &attributes_code)
+            let render_shader_source = PARTICLES_RENDER_SHADER_TEMPLATE.replace(
+                "{{ATTRIBUTES}}",
+                &attributes_code
+            )
                 .replace("{{INPUTS}}", &inputs_code)
                 .replace("{{VERTEX_MODIFIERS}}", &vertex_code)
                 .replace("{{FRAGMENT_MODIFIERS}}", &fragment_code)
@@ -1061,11 +1053,8 @@ impl EffectShaderSource {
                 .replace("{{ALPHA_CUTOFF}}", &alpha_cutoff_code)
                 .replace("{{FLIPBOOK_SCALE}}", &flipbook_scale_code)
                 .replace("{{FLIPBOOK_ROW_COUNT}}", &flipbook_row_count_code)
-                .replace(
-                    "{{PARTICLE_TEXTURE_SAMPLE_MAPPING}}",
-                    &image_sample_mapping_code,
-                );
-            trace!("Configured render shader:\n{}", render_shader_source);
+                .replace("{{PARTICLE_TEXTURE_SAMPLE_MAPPING}}", &image_sample_mapping_code);
+            warn!("Configured render shader:\n{}", render_shader_source);
 
             update_shader_sources.push(update_shader_source);
             render_shader_sources.push(render_shader_source);
@@ -1143,7 +1132,7 @@ impl CompiledParticleEffect {
         handle: Handle<EffectAsset>,
         asset: &EffectAsset,
         shaders: &mut ResMut<Assets<Shader>>,
-        shader_cache: &mut ResMut<ShaderCache>,
+        shader_cache: &mut ResMut<ShaderCache>
     ) {
         trace!(
             "Updating (rebuild:{}) compiled particle effect '{}' ({:?})",
@@ -1189,10 +1178,7 @@ impl CompiledParticleEffect {
         let shader_source = match EffectShaderSource::generate(asset) {
             Ok(shader_source) => shader_source,
             Err(err) => {
-                error!(
-                    "Failed to generate shaders for effect asset {}: {:?}",
-                    asset.name, err
-                );
+                error!("Failed to generate shaders for effect asset {}: {:?}", asset.name, err);
                 return;
             }
         };
@@ -1200,13 +1186,11 @@ impl CompiledParticleEffect {
         self.layout_flags = shader_source.layout_flags;
 
         let init_shader = shader_cache.get_or_insert(&asset.name, &shader_source.init, shaders);
-        let update_shaders: Vec<_> = shader_source
-            .update
+        let update_shaders: Vec<_> = shader_source.update
             .iter()
             .map(|update_source| shader_cache.get_or_insert(&asset.name, update_source, shaders))
             .collect();
-        let render_shaders: Vec<_> = shader_source
-            .render
+        let render_shaders: Vec<_> = shader_source.render
             .iter()
             .map(|render_source| shader_cache.get_or_insert(&asset.name, render_source, shaders))
             .collect();
@@ -1217,7 +1201,7 @@ impl CompiledParticleEffect {
             update_shaders,
             render_shaders,
             shader_source.particle_texture.is_some(),
-            self.layout_flags,
+            self.layout_flags
         );
 
         // TODO - Replace with Option<EffectShader { handle: Handle<Shader>, hash:
@@ -1351,49 +1335,47 @@ fn compile_effects(
     effects: Res<Assets<EffectAsset>>,
     mut shaders: ResMut<Assets<Shader>>,
     mut shader_cache: ResMut<ShaderCache>,
-    mut q_effects: Query<(Entity, Ref<ParticleEffect>, &mut CompiledParticleEffect)>,
+    mut q_effects: Query<(Entity, Ref<ParticleEffect>, &mut CompiledParticleEffect)>
 ) {
     trace!("compile_effects");
 
     // Loop over all existing effects to update them, including invisible ones
-    for (asset, entity, effect, mut compiled_effect) in
-        q_effects
-            .iter_mut()
-            .filter_map(|(entity, effect, compiled_effect)| {
-                // Check if asset is available, otherwise silently ignore as we can't check for
-                // changes, and conceptually it makes no sense to render a particle effect whose
-                // asset was unloaded.
-                let asset = effects.get(&effect.handle)?;
+    for (asset, entity, effect, mut compiled_effect) in q_effects
+        .iter_mut()
+        .filter_map(|(entity, effect, compiled_effect)| {
+            // Check if asset is available, otherwise silently ignore as we can't check for
+            // changes, and conceptually it makes no sense to render a particle effect whose
+            // asset was unloaded.
+            let asset = effects.get(&effect.handle)?;
 
-                Some((asset, entity, effect, compiled_effect))
-            })
-    {
+            Some((asset, entity, effect, compiled_effect))
+        }) {
         // If the ParticleEffect didn't change, and the compiled one is for the correct
         // asset, then there's nothing to do.
         let need_rebuild = effect.is_changed();
-        if !need_rebuild && (compiled_effect.asset == effect.handle) {
+        if !need_rebuild && compiled_effect.asset == effect.handle {
             continue;
         }
 
         if need_rebuild {
-            debug!("Invalidating the compiled cache for effect on entity {:?} due to changes in the ParticleEffect component. If you see this message too much, then performance might be affected. Find why the change detection of the ParticleEffect is triggered.", entity);
+            debug!(
+                "Invalidating the compiled cache for effect on entity {:?} due to changes in the ParticleEffect component. If you see this message too much, then performance might be affected. Find why the change detection of the ParticleEffect is triggered.",
+                entity
+            );
         }
 
         #[cfg(feature = "2d")]
-        let z_layer_2d = effect
-            .z_layer_2d
-            .map_or(FloatOrd(asset.z_layer_2d), |z_layer_2d| {
-                FloatOrd(z_layer_2d)
-            });
+        let z_layer_2d = effect.z_layer_2d.map_or(FloatOrd(asset.z_layer_2d), |z_layer_2d| {
+            FloatOrd(z_layer_2d)
+        });
 
         compiled_effect.update(
             need_rebuild,
-            #[cfg(feature = "2d")]
-            z_layer_2d,
+            #[cfg(feature = "2d")] z_layer_2d,
             effect.handle.clone(),
             asset,
             &mut shaders,
-            &mut shader_cache,
+            &mut shader_cache
         );
     }
 
@@ -1420,7 +1402,7 @@ fn compile_effects(
 /// compiling an effect, don't spawn it.
 fn update_properties_from_asset(
     assets: Res<Assets<EffectAsset>>,
-    mut q_effects: Query<(Ref<ParticleEffect>, &mut EffectProperties), Changed<ParticleEffect>>,
+    mut q_effects: Query<(Ref<ParticleEffect>, &mut EffectProperties), Changed<ParticleEffect>>
 ) {
     trace!("update_properties_from_asset");
 
@@ -1456,7 +1438,7 @@ struct RemovedEffectsEvent {
 /// set of the [`PostUpdate`] schedule.
 fn gather_removed_effects(
     mut removed_effects: RemovedComponents<ParticleEffect>,
-    mut removed_effects_event_writer: EventWriter<RemovedEffectsEvent>,
+    mut removed_effects_event_writer: EventWriter<RemovedEffectsEvent>
 ) {
     let entities: Vec<Entity> = removed_effects.read().collect();
     if !entities.is_empty() {
@@ -1466,23 +1448,25 @@ fn gather_removed_effects(
 
 #[cfg(test)]
 mod tests {
-    use std::{iter, ops::DerefMut};
+    use std::{ iter, ops::DerefMut };
 
     use bevy::{
         asset::{
             io::{
-                memory::{Dir, MemoryAssetReader},
-                AssetSourceBuilder, AssetSourceBuilders, AssetSourceId,
+                memory::{ Dir, MemoryAssetReader },
+                AssetSourceBuilder,
+                AssetSourceBuilders,
+                AssetSourceId,
             },
             AssetServerMode,
         },
         render::{
             deterministic::DeterministicRenderingConfig,
-            view::{VisibilityPlugin, VisibilitySystems},
+            view::{ VisibilityPlugin, VisibilitySystems },
         },
-        tasks::{IoTaskPool, TaskPoolBuilder},
+        tasks::{ IoTaskPool, TaskPoolBuilder },
     };
-    use naga_oil::compose::{Composer, NagaModuleDescriptor, ShaderDefValue};
+    use naga_oil::compose::{ Composer, NagaModuleDescriptor, ShaderDefValue };
 
     use crate::spawn::new_rng;
 
@@ -1519,39 +1503,39 @@ mod tests {
 
     #[test]
     fn to_wgsl_f32() {
-        let s = 1.0_f32.to_wgsl_string();
+        let s = (1.0_f32).to_wgsl_string();
         assert_eq!(s, "1.");
         let s = (-1.0_f32).to_wgsl_string();
         assert_eq!(s, "-1.");
-        let s = 1.5_f32.to_wgsl_string();
+        let s = (1.5_f32).to_wgsl_string();
         assert_eq!(s, "1.5");
-        let s = 0.5_f32.to_wgsl_string();
+        let s = (0.5_f32).to_wgsl_string();
         assert_eq!(s, "0.5");
-        let s = 0.123_456_78_f32.to_wgsl_string();
+        let s = (0.123_456_78_f32).to_wgsl_string();
         assert_eq!(s, "0.123457"); // 6 digits
     }
 
     #[test]
     fn to_wgsl_f64() {
-        let s = 1.0_f64.to_wgsl_string();
+        let s = (1.0_f64).to_wgsl_string();
         assert_eq!(s, "1.");
         let s = (-1.0_f64).to_wgsl_string();
         assert_eq!(s, "-1.");
-        let s = 1.5_f64.to_wgsl_string();
+        let s = (1.5_f64).to_wgsl_string();
         assert_eq!(s, "1.5");
-        let s = 0.5_f64.to_wgsl_string();
+        let s = (0.5_f64).to_wgsl_string();
         assert_eq!(s, "0.5");
-        let s = 0.123_456_789_012_345_67_f64.to_wgsl_string();
+        let s = (0.123_456_789_012_345_67_f64).to_wgsl_string();
         assert_eq!(s, "0.123456789012346"); // 15 digits
     }
 
     #[test]
     fn to_wgsl_vec() {
-        let s = Vec2::new(1., 2.).to_wgsl_string();
+        let s = Vec2::new(1.0, 2.0).to_wgsl_string();
         assert_eq!(s, "vec2<f32>(1.,2.)");
-        let s = Vec3::new(1., 2., -1.).to_wgsl_string();
+        let s = Vec3::new(1.0, 2.0, -1.0).to_wgsl_string();
         assert_eq!(s, "vec3<f32>(1.,2.,-1.)");
-        let s = Vec4::new(1., 2., -1., 2.).to_wgsl_string();
+        let s = Vec4::new(1.0, 2.0, -1.0, 2.0).to_wgsl_string();
         assert_eq!(s, "vec4<f32>(1.,2.,-1.,2.)");
     }
 
@@ -1598,10 +1582,7 @@ mod tests {
         let s = CpuValue::Single(Vec2::ONE).to_wgsl_string();
         assert_eq!(s, "vec2<f32>(1.,1.)");
         let s = CpuValue::Uniform((Vec2::ZERO, Vec2::ONE)).to_wgsl_string();
-        assert_eq!(
-            s,
-            "(frand2() * (vec2<f32>(1.,1.) - vec2<f32>(0.,0.)) + vec2<f32>(0.,0.))"
-        );
+        assert_eq!(s, "(frand2() * (vec2<f32>(1.,1.) - vec2<f32>(0.,0.)) + vec2<f32>(0.,0.))");
     }
 
     #[test]
@@ -1620,7 +1601,10 @@ mod tests {
         let s = CpuValue::Single(Vec4::ONE).to_wgsl_string();
         assert_eq!(s, "vec4<f32>(1.,1.,1.,1.)");
         let s = CpuValue::Uniform((Vec4::ZERO, Vec4::ONE)).to_wgsl_string();
-        assert_eq!(s, "(frand4() * (vec4<f32>(1.,1.,1.,1.) - vec4<f32>(0.,0.,0.,0.)) + vec4<f32>(0.,0.,0.,0.))");
+        assert_eq!(
+            s,
+            "(frand4() * (vec4<f32>(1.,1.,1.,1.) - vec4<f32>(0.,0.,0.,0.)) + vec4<f32>(0.,0.,0.,0.))"
+        );
     }
 
     #[test]
@@ -1655,29 +1639,41 @@ else { return c1; }
         let property_layout = PropertyLayout::default();
         {
             // Local is always available
-            let ctx =
-                ShaderWriter::new(ModifierContext::Update, &property_layout, &particle_layout);
+            let ctx = ShaderWriter::new(
+                ModifierContext::Update,
+                &property_layout,
+                &particle_layout
+            );
             assert!(SimulationSpace::Local.eval(&ctx).is_ok());
             assert!(SimulationSpace::Global.eval(&ctx).is_err());
 
             // Global requires storing the particle's position
             let particle_layout = ParticleLayout::new().append(Attribute::POSITION).build();
-            let ctx =
-                ShaderWriter::new(ModifierContext::Update, &property_layout, &particle_layout);
+            let ctx = ShaderWriter::new(
+                ModifierContext::Update,
+                &property_layout,
+                &particle_layout
+            );
             assert!(SimulationSpace::Local.eval(&ctx).is_ok());
             assert!(SimulationSpace::Global.eval(&ctx).is_ok());
         }
         {
             // Local is always available
-            let ctx =
-                ShaderWriter::new(ModifierContext::Update, &property_layout, &particle_layout);
+            let ctx = ShaderWriter::new(
+                ModifierContext::Update,
+                &property_layout,
+                &particle_layout
+            );
             assert!(SimulationSpace::Local.eval(&ctx).is_ok());
             assert!(SimulationSpace::Global.eval(&ctx).is_err());
 
             // Global requires storing the particle's position
             let particle_layout = ParticleLayout::new().append(Attribute::POSITION).build();
-            let ctx =
-                ShaderWriter::new(ModifierContext::Update, &property_layout, &particle_layout);
+            let ctx = ShaderWriter::new(
+                ModifierContext::Update,
+                &property_layout,
+                &particle_layout
+            );
             assert!(SimulationSpace::Local.eval(&ctx).is_ok());
             assert!(SimulationSpace::Global.eval(&ctx).is_ok());
         }
@@ -1701,16 +1697,20 @@ else { return c1; }
         let mut app = App::new();
 
         let watch_for_changes = false;
-        let mut builders = app
-            .world
-            .get_resource_or_insert_with::<AssetSourceBuilders>(Default::default);
+        let mut builders = app.world.get_resource_or_insert_with::<AssetSourceBuilders>(
+            Default::default
+        );
         let dir = Dir::default();
-        let dummy_builder = AssetSourceBuilder::default()
-            .with_reader(move || Box::new(MemoryAssetReader { root: dir.clone() }));
+        let dummy_builder = AssetSourceBuilder::default().with_reader(move ||
+            Box::new(MemoryAssetReader { root: dir.clone() })
+        );
         builders.insert(AssetSourceId::Default, dummy_builder);
         let sources = builders.build_sources(watch_for_changes, false);
-        let asset_server =
-            AssetServer::new(sources, AssetServerMode::Unprocessed, watch_for_changes);
+        let asset_server = AssetServer::new(
+            sources,
+            AssetServerMode::Unprocessed,
+            watch_for_changes
+        );
 
         app.insert_resource(asset_server);
         // app.add_plugins(DefaultPlugins);
@@ -1721,10 +1721,7 @@ else { return c1; }
         app.init_resource::<ShaderCache>();
         app.insert_resource(Random(new_rng()));
         app.init_asset::<EffectAsset>();
-        app.add_systems(
-            PostUpdate,
-            compile_effects.after(VisibilitySystems::CheckVisibility),
-        );
+        app.add_systems(PostUpdate, compile_effects.after(VisibilitySystems::CheckVisibility));
 
         app
     }
@@ -1746,8 +1743,11 @@ else { return c1; }
     fn test_effect_shader_source() {
         // Empty particle layout
         let module = Module::default();
-        let asset = EffectAsset::new(vec![256], Spawner::rate(32.0.into()), module)
-            .with_simulation_space(SimulationSpace::Local);
+        let asset = EffectAsset::new(
+            vec![256],
+            Spawner::rate((32.0).into()),
+            module
+        ).with_simulation_space(SimulationSpace::Local);
         assert_eq!(asset.simulation_space, SimulationSpace::Local);
         let res = EffectShaderSource::generate(&asset);
         assert!(res.is_err());
@@ -1757,8 +1757,9 @@ else { return c1; }
         // Missing Attribute::POSITION, currently mandatory for all effects
         let mut module = Module::default();
         let zero = module.lit(Vec3::ZERO);
-        let asset = EffectAsset::new(vec![256], Spawner::rate(32.0.into()), module)
-            .init(SetAttributeModifier::new(Attribute::VELOCITY, zero));
+        let asset = EffectAsset::new(vec![256], Spawner::rate((32.0).into()), module).init(
+            SetAttributeModifier::new(Attribute::VELOCITY, zero)
+        );
         assert!(asset.particle_layout().size() > 0);
         let res = EffectShaderSource::generate(&asset);
         assert!(res.is_err());
@@ -1768,27 +1769,17 @@ else { return c1; }
         // Valid
         let mut module = Module::default();
         let zero = module.lit(Vec3::ZERO);
-        let asset = EffectAsset::new(vec![256], Spawner::rate(32.0.into()), module)
+        let asset = EffectAsset::new(vec![256], Spawner::rate((32.0).into()), module)
             .with_simulation_space(SimulationSpace::Local)
             .init(SetAttributeModifier::new(Attribute::POSITION, zero));
         assert_eq!(asset.simulation_space, SimulationSpace::Local);
         let res = EffectShaderSource::generate(&asset);
         assert!(res.is_ok());
         let shader_source = res.unwrap();
-        for (name, code) in iter::once(("Init", &shader_source.init))
-            .chain(
-                shader_source
-                    .update
-                    .iter()
-                    .map(|update_source| ("Update", update_source)),
-            )
-            .chain(
-                shader_source
-                    .render
-                    .iter()
-                    .map(|render_source| ("Render", render_source)),
-            )
-        {
+        for (name, code) in iter
+            ::once(("Init", &shader_source.init))
+            .chain(shader_source.update.iter().map(|update_source| ("Update", update_source)))
+            .chain(shader_source.render.iter().map(|render_source| ("Render", render_source))) {
             println!("{} shader:\n\n{}", name, code);
 
             let mut shader_defs = std::collections::HashMap::<String, ShaderDefValue>::new();
@@ -1796,10 +1787,7 @@ else { return c1; }
             shader_defs.insert("PARTICLE_TEXTURE".into(), ShaderDefValue::Bool(true));
             shader_defs.insert("NEEDS_UV".into(), ShaderDefValue::Bool(true));
             shader_defs.insert("RENDER_NEEDS_SPAWNER".into(), ShaderDefValue::Bool(true));
-            shader_defs.insert(
-                "PARTICLE_SCREEN_SPACE_SIZE".into(),
-                ShaderDefValue::Bool(true),
-            );
+            shader_defs.insert("PARTICLE_SCREEN_SPACE_SIZE".into(), ShaderDefValue::Bool(true));
             if name == "Update" {
                 shader_defs.insert("REM_MAX_SPAWN_ATOMIC".into(), ShaderDefValue::Bool(true));
             }
@@ -1824,32 +1812,37 @@ else { return c1; }
             // Import bevy_hanabi::vfx_common
             {
                 let min_storage_buffer_offset_alignment = 256;
-                let common_shader =
-                    HanabiPlugin::make_common_shader(min_storage_buffer_offset_alignment);
+                let common_shader = HanabiPlugin::make_common_shader(
+                    min_storage_buffer_offset_alignment
+                );
                 let res = composer.add_composable_module((&common_shader).into());
                 assert!(res.is_ok());
             }
 
-            match composer.make_naga_module(NagaModuleDescriptor {
-                source: code,
-                file_path: &format!("{}.wgsl", name),
-                shader_defs,
-                ..Default::default()
-            }) {
+            match
+                composer.make_naga_module(NagaModuleDescriptor {
+                    source: code,
+                    file_path: &format!("{}.wgsl", name),
+                    shader_defs,
+                    ..Default::default()
+                })
+            {
                 Ok(module) => {
                     // println!("shader: {:#?}", module);
-                    let info = naga::valid::Validator::new(
-                        naga::valid::ValidationFlags::all(),
-                        naga::valid::Capabilities::default(),
-                    )
-                    .validate(&module)
-                    .unwrap();
-                    let wgsl = naga::back::wgsl::write_string(
-                        &module,
-                        &info,
-                        naga::back::wgsl::WriterFlags::EXPLICIT_TYPES,
-                    )
-                    .unwrap();
+                    let info = naga::valid::Validator
+                        ::new(
+                            naga::valid::ValidationFlags::all(),
+                            naga::valid::Capabilities::default()
+                        )
+                        .validate(&module)
+                        .unwrap();
+                    let wgsl = naga::back::wgsl
+                        ::write_string(
+                            &module,
+                            &info,
+                            naga::back::wgsl::WriterFlags::EXPLICIT_TYPES
+                        )
+                        .unwrap();
                     println!("Final wgsl from naga:\n\n{}", wgsl);
                     // Ok(module)
                 }
@@ -1872,7 +1865,7 @@ else { return c1; }
     // Regression test for #228
     #[test]
     fn test_compile_effect_changed() {
-        let spawner = Spawner::once(32.0.into(), true);
+        let spawner = Spawner::once((32.0).into(), true);
 
         let mut app = make_test_app();
 
@@ -1883,17 +1876,15 @@ else { return c1; }
             let mut assets = world.resource_mut::<Assets<EffectAsset>>();
             let mut module = Module::default();
             let init_pos = module.lit(Vec3::ZERO);
-            let mut asset = EffectAsset::new(vec![64], spawner, module)
-                .init(SetAttributeModifier::new(Attribute::POSITION, init_pos));
+            let mut asset = EffectAsset::new(vec![64], spawner, module).init(
+                SetAttributeModifier::new(Attribute::POSITION, init_pos)
+            );
             asset.simulation_condition = SimulationCondition::Always;
             let handle = assets.add(asset);
 
             // Spawn particle effect
             let entity = world
-                .spawn((
-                    ParticleEffect::new(handle.clone()),
-                    CompiledParticleEffect::default(),
-                ))
+                .spawn((ParticleEffect::new(handle.clone()), CompiledParticleEffect::default()))
                 .id();
 
             // Spawn a camera, otherwise ComputedVisibility stays at HIDDEN
@@ -1961,7 +1952,7 @@ else { return c1; }
 
     #[test]
     fn test_compile_effect_visibility() {
-        let spawner = Spawner::once(32.0.into(), true);
+        let spawner = Spawner::once((32.0).into(), true);
 
         for test_case in &[
             TestCase::new(None),
@@ -1977,8 +1968,9 @@ else { return c1; }
                 let mut assets = world.resource_mut::<Assets<EffectAsset>>();
                 let mut module = Module::default();
                 let init_pos = module.lit(Vec3::ZERO);
-                let mut asset = EffectAsset::new(vec![64], spawner, module)
-                    .init(SetAttributeModifier::new(Attribute::POSITION, init_pos));
+                let mut asset = EffectAsset::new(vec![64], spawner, module).init(
+                    SetAttributeModifier::new(Attribute::POSITION, init_pos)
+                );
                 asset.simulation_condition = if test_case.visibility.is_some() {
                     SimulationCondition::WhenVisible
                 } else {
@@ -2030,22 +2022,21 @@ else { return c1; }
                     particle_effect,
                     compiled_particle_effect,
                 ) = world
-                    .query::<(
-                        Entity,
-                        &Visibility,
-                        &InheritedVisibility,
-                        &ParticleEffect,
-                        &CompiledParticleEffect,
-                    )>()
+                    .query::<
+                        (
+                            Entity,
+                            &Visibility,
+                            &InheritedVisibility,
+                            &ParticleEffect,
+                            &CompiledParticleEffect,
+                        )
+                    >()
                     .iter(world)
                     .next()
                     .unwrap();
                 assert_eq!(entity, effect_entity);
                 assert_eq!(visibility, test_visibility);
-                assert_eq!(
-                    inherited_visibility.get(),
-                    test_visibility == Visibility::Visible
-                );
+                assert_eq!(inherited_visibility.get(), test_visibility == Visibility::Visible);
                 assert_eq!(particle_effect.handle, handle);
 
                 // `compile_effects()` always updates the CompiledParticleEffect of new effects,
