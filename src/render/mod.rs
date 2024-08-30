@@ -25,6 +25,8 @@ use bevy::{
     utils::HashMap,
 };
 use bitflags::bitflags;
+use bytemuck::bytes_of;
+use effect_cache::ExportBuffer;
 use fixedbitset::FixedBitSet;
 use naga_oil::compose::{ Composer, NagaModuleDescriptor };
 use rand::random;
@@ -641,7 +643,7 @@ impl SpecializedComputePipeline for ParticlesInitPipeline {
             key.property_layout_min_binding_size.map(|sz| sz.get()).unwrap_or(0)
         );
 
-        let mut entries = Vec::with_capacity(3);
+        let mut entries = Vec::with_capacity(4);
         // (1,0) ParticleBuffer
         entries.push(BindGroupLayoutEntry {
             binding: 0,
@@ -691,7 +693,6 @@ impl SpecializedComputePipeline for ParticlesInitPipeline {
                 count: None,
             });
         }
-
         let label = "hanabi:init_particles_buffer_layout";
         trace!(
             "Creating particle bind group layout '{}' for init pass with {} entries.",
@@ -717,11 +718,51 @@ impl SpecializedComputePipeline for ParticlesInitPipeline {
 }
 
 #[derive(Resource)]
+pub(crate) struct ParticlesUtilityPipeline{
+    _render_device: RenderDevice,
+    export_buffer_layout: BindGroupLayout,
+}   
+
+impl FromWorld for ParticlesUtilityPipeline{
+    fn from_world(world: &mut World) -> Self {
+        let world = world.cell();
+        let render_device = world.get_resource::<RenderDevice>().unwrap();
+
+        let export_buffer_layout = ExportBuffer::export_bind_group_layout(&render_device);
+        Self { _render_device: render_device.clone(), export_buffer_layout }
+    }
+}
+
+#[derive(Default, Clone, Hash,  PartialEq, Eq)]
+pub(crate) struct ParticleUtilityPipelineKey {
+    shader: Handle<Shader>,
+}
+
+impl SpecializedComputePipeline for ParticlesUtilityPipeline{
+    type Key =  ParticleUtilityPipelineKey;
+    
+    fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
+        ComputePipelineDescriptor {
+            label: Some("hanabi: pipeline_utility_particles".into()),
+            layout: vec![
+                self.export_buffer_layout.clone()
+            ],
+            shader: key.shader,
+            shader_defs: vec![],
+            entry_point: "main".into(),
+            push_constant_ranges: Vec::new(),
+        }
+    }
+    
+}
+
+#[derive(Resource)]
 pub(crate) struct ParticlesUpdatePipeline {
     render_device: RenderDevice,
     sim_params_layout: BindGroupLayout,
     spawner_buffer_layout: BindGroupLayout,
     render_indirect_layout: BindGroupLayout,
+    export_buffer_layout: BindGroupLayout,
 }
 
 impl FromWorld for ParticlesUpdatePipeline {
@@ -811,11 +852,14 @@ impl FromWorld for ParticlesUpdatePipeline {
             ]
         );
 
+        let export_buffer_layout = ExportBuffer::export_bind_group_layout(&render_device);
+
         Self {
             render_device: render_device.clone(),
             sim_params_layout,
             spawner_buffer_layout,
             render_indirect_layout,
+            export_buffer_layout,
         }
     }
 }
@@ -914,7 +958,8 @@ impl SpecializedComputePipeline for ParticlesUpdatePipeline {
                 self.sim_params_layout.clone(),
                 update_particles_buffer_layout,
                 self.spawner_buffer_layout.clone(),
-                self.render_indirect_layout.clone()
+                self.render_indirect_layout.clone(),
+                self.export_buffer_layout.clone()
             ],
             shader: key.shader,
             shader_defs: vec!["REM_MAX_SPAWN_ATOMIC".into()],
@@ -1333,6 +1378,10 @@ pub struct AddedEffect {
     /// Handle of the effect asset.
     pub handle: Handle<EffectAsset>,
 }
+#[derive(Default)]
+pub struct UtilityData{
+    pub utility_shader: Option<Handle<Shader>>,
+}
 
 /// Collection of all extracted effects for this frame, inserted into the
 /// render world as a render resource.
@@ -1349,6 +1398,8 @@ pub(crate) struct ExtractedEffects {
     pub removed_effect_entities: Vec<Entity>,
     /// Newly added effects without a GPU allocation yet.
     pub added_effects: Vec<AddedEffect>,
+
+    pub utility: UtilityData,
 }
 
 #[derive(Default, Resource)]
@@ -1381,12 +1432,14 @@ pub(crate) fn extract_effect_events(
 /// This system runs in parallel of [`extract_effect_events`].
 ///
 /// [`ParticleEffect`]: crate::ParticleEffect
+#[allow(warnings)]
 pub(crate) fn extract_effects(
     real_time: Extract<Res<Time<Real>>>,
     virtual_time: Extract<Res<Time<Virtual>>>,
     time: Extract<Res<Time<EffectSimulation>>>,
     effects: Extract<Res<Assets<EffectAsset>>>,
     _images: Extract<Res<Assets<Image>>>,
+    shader_cache: Extract<Res<ShaderCache>>,
     mut query: Extract<
         ParamSet<
             (
@@ -1412,7 +1465,7 @@ pub(crate) fn extract_effects(
     >,
     mut removed_effects_event_reader: Extract<EventReader<RemovedEffectsEvent>>,
     mut sim_params: ResMut<SimParams>,
-    mut extracted_effects: ResMut<ExtractedEffects>
+    mut extracted_effects: ResMut<ExtractedEffects>,
 ) {
     trace!("extract_effects");
 
@@ -1557,6 +1610,8 @@ pub(crate) fn extract_effects(
             effect_shader,
             //#[cfg(feature = "2d")] z_sort_key_2d,
         });
+
+        extracted_effects.utility.utility_shader = shader_cache.get_utility_shader();
     }
 }
 
@@ -1985,14 +2040,16 @@ pub(crate) fn prepare_effects(
     dispatch_indirect_pipeline: Res<DispatchIndirectPipeline>,
     init_pipeline: Res<ParticlesInitPipeline>,
     update_pipeline: Res<ParticlesUpdatePipeline>,
+    utility_pipeline: Res<ParticlesUtilityPipeline>,
     mut specialized_init_pipelines: ResMut<SpecializedComputePipelines<ParticlesInitPipeline>>,
     mut specialized_update_pipelines: ResMut<SpecializedComputePipelines<ParticlesUpdatePipeline>>,
+    mut specialized_utility_pipelines: ResMut<SpecializedComputePipelines<ParticlesUtilityPipeline>>,
     // update_pipeline: Res<ParticlesUpdatePipeline>, // TODO move update_pipeline.pipeline to
     // EffectsMeta
     mut effects_meta: ResMut<EffectsMeta>,
     mut effect_cache: ResMut<EffectCache>,
     mut extracted_effects: ResMut<ExtractedEffects>,
-    mut effect_bind_groups: ResMut<EffectBindGroups>
+    mut effect_bind_groups: ResMut<EffectBindGroups>,
 ) {
     trace!("prepare_effects");
 
@@ -2072,7 +2129,12 @@ pub(crate) fn prepare_effects(
     // the previous start end, without gap). EffectSlice already contains both
     // information, and the proper ordering implementation.
     // effect_entity_list.sort_by_key(|a| a.effect_slice.clone());
-
+    if effect_cache.utility_pipeline_id.is_none(){
+        let utility_pipeline_id = specialized_utility_pipelines.specialize(&pipeline_cache, &utility_pipeline, ParticleUtilityPipelineKey{
+            shader: extracted_effects.utility.utility_shader.clone().unwrap(),
+        });
+        effect_cache.utility_pipeline_id = Some(utility_pipeline_id);
+    }
     // Loop on all extracted effects in order and try to batch them together to
     // reduce draw calls
     effects_meta.spawner_buffer.clear();
@@ -3219,6 +3281,9 @@ pub(crate) struct VfxSimulateNode {
 }
 
 impl VfxSimulateNode {
+
+    const _UTILITY_WORKGROUP_SIZE: u32 = 256;
+
     /// Output particle buffer for that view. TODO - how to handle multiple
     /// buffers?! Should use Entity instead??
     // pub const OUT_PARTICLE_BUFFER: &'static str = "particle_buffer";
@@ -3232,6 +3297,7 @@ impl VfxSimulateNode {
 }
 
 impl Node for VfxSimulateNode {
+
     fn input(&self) -> Vec<SlotInfo> {
         vec![]
     }
@@ -3257,7 +3323,7 @@ impl Node for VfxSimulateNode {
         let effects_meta = world.resource::<EffectsMeta>();
         let effect_cache = world.resource::<EffectCache>();
         let effect_bind_groups = world.resource::<EffectBindGroups>();
-        // let render_queue = world.resource::<RenderQueue>();
+        let render_queue = world.resource::<RenderQueue>();
 
         // Make sure to schedule any buffer copy from changed effects before accessing
         // them
@@ -3390,7 +3456,11 @@ impl Node for VfxSimulateNode {
                 }
             }
         }
-
+        let update_export_uniform = |value:u32|{
+            let target = effect_cache.export_uniform();
+            render_queue.write_buffer(target, 0, bytes_of(&value));
+        };
+        let mut _count = 0;
         // Compute indirect dispatch pass
         if
             effects_meta.spawner_buffer.buffer().is_some() &&
@@ -3450,7 +3520,6 @@ impl Node for VfxSimulateNode {
                     timestamp_writes: None,
                 })
             );
-
             // Dispatch update compute jobs
             for (entity, batches) in self.effect_query.iter_manual(world) {
                 let effect_cache_id = batches.effect_cache_id;
@@ -3490,6 +3559,7 @@ impl Node for VfxSimulateNode {
                 for (group_index, update_pipeline_id) in batches.update_pipeline_ids
                     .iter()
                     .enumerate() {
+                    update_export_uniform(_count);
                     let Some(update_pipeline) = pipeline_cache.get_compute_pipeline(
                         *update_pipeline_id
                     ) else {
@@ -3541,6 +3611,7 @@ impl Node for VfxSimulateNode {
                         &[spawner_base * (spawner_buffer_aligned as u32)]
                     );
                     compute_pass.set_bind_group(3, update_render_indirect_bind_group, &[]);
+                    compute_pass.set_bind_group(4, effect_cache.export_bind_group(), &[]);
 
                     if let Some(buffer) = effects_meta.dispatch_indirect_buffer.buffer() {
                         trace!(
@@ -3556,8 +3627,25 @@ impl Node for VfxSimulateNode {
                     }
 
                     trace!("update compute dispatched");
+                    _count += 1;
                 }
             }
+        }
+        // Compute utility pass
+        if let Some(id) = effect_cache.utility_pipeline_id {
+            update_export_uniform(_count);
+            let mut compute_pass = render_context.command_encoder().begin_compute_pass(
+                &(ComputePassDescriptor {
+                    label: Some("hanabi:utility"),
+                    timestamp_writes: None,
+                })
+            );
+            let pipeline = pipeline_cache.get_compute_pipeline(id).unwrap();
+            compute_pass.set_pipeline(pipeline);
+            compute_pass.set_bind_group(0, effect_cache.export_bind_group(), &[]);
+            //let workgroup_count = (_count + Self::UTILITY_WORKGROUP_SIZE - 1) / Self::UTILITY_WORKGROUP_SIZE;
+            let workgroup_count = 1;
+            compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
         }
 
         Ok(())

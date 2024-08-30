@@ -20,12 +20,7 @@ use crate::{
     compile_effects, gather_removed_effects,
     properties::EffectProperties,
     render::{
-        extract_effect_events, extract_effects, prepare_bind_groups, prepare_effects,
-        prepare_resources, queue_effects, DispatchIndirectPipeline, DrawEffects, EffectAssetEvents,
-        EffectBindGroups, EffectCache, EffectsMeta, ExtractedEffects, GpuDispatchIndirect,
-        GpuParticleGroup, GpuRenderEffectMetadata, GpuRenderGroupIndirect, GpuSpawnerParams,
-        ParticlesInitPipeline, ParticlesRenderPipeline, ParticlesUpdatePipeline, ShaderCache,
-        SimParams, StorageType as _, VfxSimulateDriverNode, VfxSimulateNode,
+        extract_effect_events, extract_effects, prepare_bind_groups, prepare_effects, prepare_resources, queue_effects, DispatchIndirectPipeline, DrawEffects, EffectAssetEvents, EffectBindGroups, EffectCache, EffectsMeta, ExtractedEffects, GpuDispatchIndirect, GpuParticleGroup, GpuRenderEffectMetadata, GpuRenderGroupIndirect, GpuSpawnerParams, ParticlesInitPipeline, ParticlesRenderPipeline, ParticlesUpdatePipeline, ParticlesUtilityPipeline, ShaderCache, SimParams, StorageType as _, VfxSimulateDriverNode, VfxSimulateNode
     },
     spawn::{self, Random},
     tick_spawners,
@@ -262,7 +257,9 @@ impl Plugin for HanabiPlugin {
             .init_resource::<EffectBindGroups>()
             .init_resource::<DispatchIndirectPipeline>()
             .init_resource::<ParticlesInitPipeline>()
+            .init_resource::<ParticlesUtilityPipeline>()
             .init_resource::<SpecializedComputePipelines<ParticlesInitPipeline>>()
+            .init_resource::<SpecializedComputePipelines<ParticlesUtilityPipeline>>()
             .init_resource::<ParticlesUpdatePipeline>()
             .init_resource::<SpecializedComputePipelines<ParticlesUpdatePipeline>>()
             .init_resource::<ParticlesRenderPipeline>()

@@ -1335,9 +1335,16 @@ fn compile_effects(
     effects: Res<Assets<EffectAsset>>,
     mut shaders: ResMut<Assets<Shader>>,
     mut shader_cache: ResMut<ShaderCache>,
-    mut q_effects: Query<(Entity, Ref<ParticleEffect>, &mut CompiledParticleEffect)>
+    mut q_effects: Query<(Entity, Ref<ParticleEffect>, &mut CompiledParticleEffect)>,
 ) {
     trace!("compile_effects");
+    const PARTICLES_INIT_SHADER_TEMPLATE: &str = include_str!("render/utility.wgsl");
+
+    if shader_cache.get_utility_shader().is_none() {
+        let temp = shader_cache.get_or_insert("utility", PARTICLES_INIT_SHADER_TEMPLATE, &mut shaders);
+        shader_cache.set_utility_shader(temp);
+    }
+    
 
     // Loop over all existing effects to update them, including invisible ones
     for (asset, entity, effect, mut compiled_effect) in q_effects

@@ -22,6 +22,8 @@ struct ParticleBuffer {
 @group(2) @binding(0) var<storage, read_write> spawner : Spawner; // NOTE - same group as init
 @group(3) @binding(0) var<storage, read_write> render_effect_indirect : RenderEffectMetadata;
 @group(3) @binding(1) var<storage, read_write> render_group_indirect : array<RenderGroupIndirect>;
+@group(4) @binding(0) var<storage, read_write> export_buffer : array<u32>;
+@group(4) @binding(1) var<uniform> particle_index : u32;
 
 {{UPDATE_EXTRA}}
 
@@ -74,4 +76,6 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
         let indirect_index = atomicAdd(&render_group_indirect[{{GROUP_INDEX}}].instance_count, 1u);
         indirect_buffer.indices[3u * (base_index + indirect_index) + ping] = index;
     }
+    let alive_count = atomicLoad(&render_group_indirect[{{GROUP_INDEX}}].instance_count);
+    export_buffer[particle_index] = alive_count;
 }

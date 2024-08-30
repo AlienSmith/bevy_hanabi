@@ -92,6 +92,96 @@ impl SliceRef {
     }
 }
 
+#[derive(Debug)]
+/// Storage for buffer to export.
+pub struct ExportBuffer{
+    pub buffer: Buffer,
+    pub uniform: Buffer,
+    pub buffer_layout: BindGroupLayout,
+    pub bind_group: BindGroup,
+} 
+impl ExportBuffer {
+    pub const MIN_BUFFER_SIZE:u64 = 65536;
+    pub const MIN_UNIFORM_SIZE:u64 = 4;
+
+    pub fn export_bind_group_layout(render_device: &RenderDevice) -> BindGroupLayout {
+        let label = Some("export");
+        let export_buffer_size = NonZeroU64::new(Self::MIN_BUFFER_SIZE);
+        let export_uniform_size = NonZeroU64::new(Self::MIN_UNIFORM_SIZE);
+        let entries = vec![
+            // @binding(0) var<storage, read_write> particle_buffer : ParticleBuffer
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: export_buffer_size,
+                },
+                count: None,
+            },
+
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: export_uniform_size,
+                },
+                count: None,
+            },
+        ];
+        render_device.create_bind_group_layout(label, &entries)
+    }
+
+    fn new(render_device: &RenderDevice) -> Self{
+        let label = Some("export");
+        let buffer = render_device.create_buffer(&BufferDescriptor {
+            label,
+            size: Self::MIN_BUFFER_SIZE,
+            usage: BufferUsages::COPY_DST | BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+
+        let uniform = render_device.create_buffer(&BufferDescriptor {
+            label: Some("particle index"),
+            size: Self::MIN_BUFFER_SIZE,
+            usage: BufferUsages::COPY_DST | BufferUsages::UNIFORM,
+            mapped_at_creation: false,
+        });
+
+        let buffer_layout = Self::export_bind_group_layout(render_device);
+
+        let buffer_binding = BufferBinding {
+            buffer: &buffer,
+            offset: 0,
+            size: NonZeroU64::new(Self::MIN_BUFFER_SIZE),
+        };
+
+        let uniform_binding = BufferBinding{
+            buffer: &uniform,
+            offset: 0,
+            size: NonZeroU64::new(Self::MIN_UNIFORM_SIZE),
+        };
+
+        let bindings = vec![
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(buffer_binding),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(uniform_binding),
+            },
+        ];
+        warn!(
+            "Creating export buffer, layout, bind group for simulation pass"
+        );
+        let bind_group = render_device.create_bind_group(Some("hanabi:bind_group_export_buffer"), &buffer_layout, &bindings);
+        Self { buffer, uniform, buffer_layout, bind_group}
+    }
+}
 /// Storage for a single kind of effects, sharing the same buffer(s).
 ///
 /// Currently only accepts a single unique item size (particle size), fixed at
@@ -673,6 +763,9 @@ pub struct EffectCache {
     buffers: Vec<Option<EffectBuffer>>,
     /// Map from an effect cache ID to various buffer indices.
     effects: HashMap<EffectCacheId, CachedEffectIndices>,
+    exports: ExportBuffer,
+    /// utility compute pipeline specialized for this batch.
+    pub utility_pipeline_id: Option<CachedComputePipelineId>,
 }
 
 /// Stores the buffer index and slice boundaries within the buffer for all
@@ -713,10 +806,13 @@ impl Default for DispatchBufferIndices {
 
 impl EffectCache {
     pub fn new(device: RenderDevice) -> Self {
+        let exports = ExportBuffer::new(&device);
         Self {
             device,
             buffers: vec![],
             effects: HashMap::default(),
+            exports,
+            utility_pipeline_id: None,
         }
     }
 
@@ -851,6 +947,14 @@ impl EffectCache {
             }
         }
         None
+    }
+
+    pub fn export_bind_group(&self) -> &BindGroup{
+        &self.exports.bind_group
+    }
+
+    pub fn export_uniform(&self) -> &Buffer {
+        &self.exports.uniform
     }
 
     /// Get the update bind group for a cached effect.
