@@ -2,7 +2,7 @@ use bevy::{
     asset::Handle,
     ecs::system::Resource,
     log::{trace, warn},
-    render::{render_resource::*, renderer::RenderDevice},
+    render::{render_resource::*, renderer::{RenderDevice, RenderQueue}},
     utils::HashMap,
 };
 use bytemuck::cast_slice_mut;
@@ -97,13 +97,14 @@ impl SliceRef {
 pub struct ExportBuffer{
     pub buffer: Buffer,
     pub uniform: Buffer,
+    staging_buffer: Buffer,
     pub buffer_layout: BindGroupLayout,
     pub bind_group: BindGroup,
 } 
 impl ExportBuffer {
     pub const MIN_BUFFER_SIZE:u64 = 65536;
     pub const MIN_UNIFORM_SIZE:u64 = 4;
-
+    pub const MIN_PARTICLES_COUNT:u64 = 256;
     pub fn export_bind_group_layout(render_device: &RenderDevice) -> BindGroupLayout {
         let label = Some("export");
         let export_buffer_size = NonZeroU64::new(Self::MIN_BUFFER_SIZE);
@@ -134,8 +135,12 @@ impl ExportBuffer {
         ];
         render_device.create_bind_group_layout(label, &entries)
     }
+    //we need to use copy_buffer_to_buffer cause queue.write_buffer won't update between dispatches
+    pub fn update_uniform(&self,  encoder: &mut CommandEncoder, index: u64) {
+        encoder.copy_buffer_to_buffer(&self.staging_buffer, index * Self::MIN_UNIFORM_SIZE, &self.uniform, 0, Self::MIN_UNIFORM_SIZE);
+    }
 
-    fn new(render_device: &RenderDevice) -> Self{
+    fn new(render_device: &RenderDevice, render_queue: &RenderQueue) -> Self{
         let label = Some("export");
         let buffer = render_device.create_buffer(&BufferDescriptor {
             label,
@@ -151,6 +156,14 @@ impl ExportBuffer {
             mapped_at_creation: false,
         });
 
+        let staging_buffer = render_device.create_buffer(&BufferDescriptor {
+            label: Some("particle index"),
+            size: Self::MIN_PARTICLES_COUNT * Self::MIN_UNIFORM_SIZE,
+            usage: BufferUsages::COPY_DST | BufferUsages::COPY_SRC | BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let vector: Vec<u32> = (0..Self::MIN_PARTICLES_COUNT as u32).collect(); 
+        render_queue.write_buffer(&staging_buffer, 0, bytemuck::cast_slice(&vector));
         let buffer_layout = Self::export_bind_group_layout(render_device);
 
         let buffer_binding = BufferBinding {
@@ -179,7 +192,7 @@ impl ExportBuffer {
             "Creating export buffer, layout, bind group for simulation pass"
         );
         let bind_group = render_device.create_bind_group(Some("hanabi:bind_group_export_buffer"), &buffer_layout, &bindings);
-        Self { buffer, uniform, buffer_layout, bind_group}
+        Self { buffer, uniform, staging_buffer, buffer_layout, bind_group}
     }
 }
 /// Storage for a single kind of effects, sharing the same buffer(s).
@@ -805,8 +818,8 @@ impl Default for DispatchBufferIndices {
 }
 
 impl EffectCache {
-    pub fn new(device: RenderDevice) -> Self {
-        let exports = ExportBuffer::new(&device);
+    pub fn new(device: RenderDevice, render_queue: RenderQueue) -> Self {
+        let exports = ExportBuffer::new(&device, &render_queue);
         Self {
             device,
             buffers: vec![],
@@ -953,8 +966,8 @@ impl EffectCache {
         &self.exports.bind_group
     }
 
-    pub fn export_uniform(&self) -> &Buffer {
-        &self.exports.uniform
+    pub fn update_uniform(&self,  encoder: &mut CommandEncoder, index: u64) {
+        self.exports.update_uniform(encoder, index);
     }
 
     /// Get the update bind group for a cached effect.

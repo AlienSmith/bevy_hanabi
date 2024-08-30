@@ -25,7 +25,6 @@ use bevy::{
     utils::HashMap,
 };
 use bitflags::bitflags;
-use bytemuck::bytes_of;
 use effect_cache::ExportBuffer;
 use fixedbitset::FixedBitSet;
 use naga_oil::compose::{ Composer, NagaModuleDescriptor };
@@ -3323,7 +3322,6 @@ impl Node for VfxSimulateNode {
         let effects_meta = world.resource::<EffectsMeta>();
         let effect_cache = world.resource::<EffectCache>();
         let effect_bind_groups = world.resource::<EffectBindGroups>();
-        let render_queue = world.resource::<RenderQueue>();
 
         // Make sure to schedule any buffer copy from changed effects before accessing
         // them
@@ -3456,10 +3454,6 @@ impl Node for VfxSimulateNode {
                 }
             }
         }
-        let update_export_uniform = |value:u32|{
-            let target = effect_cache.export_uniform();
-            render_queue.write_buffer(target, 0, bytes_of(&value));
-        };
         let mut _count = 0;
         // Compute indirect dispatch pass
         if
@@ -3514,12 +3508,6 @@ impl Node for VfxSimulateNode {
 
         // Compute update pass
         {
-            let mut compute_pass = render_context.command_encoder().begin_compute_pass(
-                &(ComputePassDescriptor {
-                    label: Some("hanabi:update"),
-                    timestamp_writes: None,
-                })
-            );
             // Dispatch update compute jobs
             for (entity, batches) in self.effect_query.iter_manual(world) {
                 let effect_cache_id = batches.effect_cache_id;
@@ -3559,7 +3547,13 @@ impl Node for VfxSimulateNode {
                 for (group_index, update_pipeline_id) in batches.update_pipeline_ids
                     .iter()
                     .enumerate() {
-                    update_export_uniform(_count);
+                    effect_cache.update_uniform(render_context.command_encoder(),_count);
+                    let mut compute_pass = render_context.command_encoder().begin_compute_pass(
+                        &(ComputePassDescriptor {
+                            label: Some("hanabi:update"),
+                            timestamp_writes: None,
+                        })
+                    );
                     let Some(update_pipeline) = pipeline_cache.get_compute_pipeline(
                         *update_pipeline_id
                     ) else {
@@ -3633,7 +3627,7 @@ impl Node for VfxSimulateNode {
         }
         // Compute utility pass
         if let Some(id) = effect_cache.utility_pipeline_id {
-            update_export_uniform(_count);
+            effect_cache.update_uniform(render_context.command_encoder(),_count);
             let mut compute_pass = render_context.command_encoder().begin_compute_pass(
                 &(ComputePassDescriptor {
                     label: Some("hanabi:utility"),

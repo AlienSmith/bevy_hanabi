@@ -8,7 +8,7 @@ use bevy::{
         render_graph::RenderGraph,
         render_phase::DrawFunctions,
         render_resource::{SpecializedComputePipelines, SpecializedRenderPipelines},
-        renderer::{RenderAdapterInfo, RenderDevice},
+        renderer::{RenderAdapterInfo, RenderDevice, RenderQueue},
         view::{prepare_view_uniforms, visibility::VisibilitySystems},
         Render, RenderApp, RenderSet,
     },
@@ -220,6 +220,12 @@ impl Plugin for HanabiPlugin {
             .resource::<RenderDevice>()
             .clone();
 
+        let render_queue = app
+            .sub_app(RenderApp)
+            .world
+            .resource::<RenderQueue>()
+            .clone();
+
         let adapter_name = app
             .world
             .get_resource::<RenderAdapterInfo>()
@@ -247,7 +253,7 @@ impl Plugin for HanabiPlugin {
         }
 
         let effects_meta = EffectsMeta::new(render_device.clone());
-        let effect_cache = EffectCache::new(render_device);
+        let effect_cache = EffectCache::new(render_device, render_queue);
 
         // Register the custom render pipeline
         let render_app = app.sub_app_mut(RenderApp);
