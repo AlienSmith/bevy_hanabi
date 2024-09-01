@@ -38,20 +38,7 @@ use bevy::core_pipeline::core_2d::Transparent2d;
 use bevy::core_pipeline::core_3d::{ AlphaMask3d, Transparent3d };
 
 use crate::{
-    asset::EffectAsset,
-    next_multiple_of,
-    render::{ batch::{ BatchesInput, EffectDrawBatch }, effect_cache::DispatchBufferIndices },
-    spawn::EffectSpawner,
-    CompiledParticleEffect,
-    EffectProperties,
-    EffectShader,
-    EffectSimulation,
-    HanabiPlugin,
-    ParticleLayout,
-    PropertyLayout,
-    RemovedEffectsEvent,
-    SimulationCondition,
-    ToWgslString,
+    asset::EffectAsset, next_multiple_of, plugin::DummyStruct, render::{ batch::{ BatchesInput, EffectDrawBatch }, effect_cache::DispatchBufferIndices }, spawn::EffectSpawner, CompiledParticleEffect, EffectProperties, EffectShader, EffectSimulation, HanabiPlugin, ParticleLayout, PropertyLayout, RemovedEffectsEvent, SimulationCondition, ToWgslString
 };
 
 mod aligned_buffer_vec;
@@ -753,6 +740,106 @@ impl SpecializedComputePipeline for ParticlesUtilityPipeline{
         }
     }
     
+}
+
+#[derive(Resource)]
+pub(crate) struct ParticlesExportPipeline {
+    render_device: RenderDevice,
+    export_buffer_layout: BindGroupLayout,
+}
+
+impl FromWorld for ParticlesExportPipeline{
+    fn from_world(world: &mut World) -> Self {
+        let world = world.cell();
+        let render_device = world.get_resource::<RenderDevice>().unwrap();
+
+        let export_buffer_layout = ExportBuffer::export_bind_group_layout(&render_device);
+        Self { render_device: render_device.clone(), export_buffer_layout }
+
+    }
+}
+
+impl SpecializedComputePipeline for ParticlesExportPipeline {
+    type Key = ParticleUpdatePipelineKey;
+
+    fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
+
+        let particle_group_size = GpuParticleGroup::aligned_size(
+            self.render_device.limits().min_storage_buffer_offset_alignment
+        );
+        let mut entries = vec![
+            // @binding(0) var<storage, read_write> particle_buffer : ParticleBuffer
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(key.particle_layout.min_binding_size()),
+                },
+                count: None,
+            },
+            // @binding(1) var<storage, read_write> indirect_buffer : IndirectBuffer
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: BufferSize::new(INDIRECT_INDEX_SIZE as _),
+                },
+                count: None,
+            },
+            // @binding(2) var<storage, read> particle_groups : array<ParticleGroup>
+            BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(particle_group_size),
+                },
+                count: None,
+            }
+            //TODO add the buffer to export here
+        ];
+        if !key.property_layout.is_empty() {
+            // @binding(3) var<storage, read> properties : Properties
+            entries.push(BindGroupLayoutEntry {
+                binding: 3,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false, // TODO
+                    min_binding_size: Some(key.property_layout.min_binding_size()),
+                },
+                count: None,
+            });
+        }
+
+        let label = "hanabi:update_particles_buffer_layout";
+        trace!(
+            "Creating particle bind group layout '{}' for update pass with {} entries.",
+            label,
+            entries.len()
+        );
+        let update_particles_buffer_layout = self.render_device.create_bind_group_layout(
+            label,
+            &entries
+        );
+
+        ComputePipelineDescriptor {
+            label: Some("hanabi:pipeline_update_compute".into()),
+            layout: vec![
+                update_particles_buffer_layout,
+                self.export_buffer_layout.clone()
+            ],
+            shader: key.shader,
+            shader_defs: vec!["REM_MAX_SPAWN_ATOMIC".into()],
+            entry_point: "main".into(),
+            push_constant_ranges: Vec::new(),
+        }
+    }
 }
 
 #[derive(Resource)]
@@ -2030,6 +2117,21 @@ impl Default for LayoutFlags {
     }
 }
 
+pub(crate) fn prepare_effects_continue(
+    pipeline_cache: Res<PipelineCache>,
+    mut effect_cache: ResMut<EffectCache>,
+    extracted_effects: Res<ExtractedEffects>,
+    utility_pipeline: Res<ParticlesUtilityPipeline>,
+    mut specialized_utility_pipelines: ResMut<SpecializedComputePipelines<ParticlesUtilityPipeline>>,
+){
+    if effect_cache.utility_pipeline_id.is_none(){
+        let utility_pipeline_id = specialized_utility_pipelines.specialize(&pipeline_cache, &utility_pipeline, ParticleUtilityPipelineKey{
+            shader: extracted_effects.utility.utility_shader.clone().unwrap(),
+        });
+        effect_cache.utility_pipeline_id = Some(utility_pipeline_id);
+    }
+}
+
 pub(crate) fn prepare_effects(
     mut commands: Commands,
     sim_params: Res<SimParams>,
@@ -2039,10 +2141,10 @@ pub(crate) fn prepare_effects(
     dispatch_indirect_pipeline: Res<DispatchIndirectPipeline>,
     init_pipeline: Res<ParticlesInitPipeline>,
     update_pipeline: Res<ParticlesUpdatePipeline>,
-    utility_pipeline: Res<ParticlesUtilityPipeline>,
+    export_pipeline: Res<ParticlesExportPipeline>,
     mut specialized_init_pipelines: ResMut<SpecializedComputePipelines<ParticlesInitPipeline>>,
     mut specialized_update_pipelines: ResMut<SpecializedComputePipelines<ParticlesUpdatePipeline>>,
-    mut specialized_utility_pipelines: ResMut<SpecializedComputePipelines<ParticlesUtilityPipeline>>,
+    mut specialized_export_pipelines: ResMut<SpecializedComputePipelines<ParticlesExportPipeline>>,
     // update_pipeline: Res<ParticlesUpdatePipeline>, // TODO move update_pipeline.pipeline to
     // EffectsMeta
     mut effects_meta: ResMut<EffectsMeta>,
@@ -2051,12 +2153,10 @@ pub(crate) fn prepare_effects(
     mut effect_bind_groups: ResMut<EffectBindGroups>,
 ) {
     trace!("prepare_effects");
-
     // Allocate spawner buffer if needed
     // if effects_meta.spawner_buffer.is_empty() {
     //    effects_meta.spawner_buffer.push(GpuSpawnerParams::default());
     //}
-
     // Write vertices (TODO - lazily once only)
     effects_meta.vertices.write_buffer(&render_device, &render_queue);
 
@@ -2128,12 +2228,6 @@ pub(crate) fn prepare_effects(
     // the previous start end, without gap). EffectSlice already contains both
     // information, and the proper ordering implementation.
     // effect_entity_list.sort_by_key(|a| a.effect_slice.clone());
-    if effect_cache.utility_pipeline_id.is_none(){
-        let utility_pipeline_id = specialized_utility_pipelines.specialize(&pipeline_cache, &utility_pipeline, ParticleUtilityPipelineKey{
-            shader: extracted_effects.utility.utility_shader.clone().unwrap(),
-        });
-        effect_cache.utility_pipeline_id = Some(utility_pipeline_id);
-    }
     // Loop on all extracted effects in order and try to batch them together to
     // reduce draw calls
     effects_meta.spawner_buffer.clear();

@@ -20,7 +20,7 @@ use crate::{
     compile_effects, gather_removed_effects,
     properties::EffectProperties,
     render::{
-        extract_effect_events, extract_effects, prepare_bind_groups, prepare_effects, prepare_resources, queue_effects, DispatchIndirectPipeline, DrawEffects, EffectAssetEvents, EffectBindGroups, EffectCache, EffectsMeta, ExtractedEffects, GpuDispatchIndirect, GpuParticleGroup, GpuRenderEffectMetadata, GpuRenderGroupIndirect, GpuSpawnerParams, ParticlesInitPipeline, ParticlesRenderPipeline, ParticlesUpdatePipeline, ParticlesUtilityPipeline, ShaderCache, SimParams, StorageType as _, VfxSimulateDriverNode, VfxSimulateNode
+        extract_effect_events, extract_effects, prepare_bind_groups, prepare_effects, prepare_effects_continue, prepare_resources, queue_effects, DispatchIndirectPipeline, DrawEffects, EffectAssetEvents, EffectBindGroups, EffectCache, EffectsMeta, ExtractedEffects, GpuDispatchIndirect, GpuParticleGroup, GpuRenderEffectMetadata, GpuRenderGroupIndirect, GpuSpawnerParams, ParticlesExportPipeline, ParticlesInitPipeline, ParticlesRenderPipeline, ParticlesUpdatePipeline, ParticlesUtilityPipeline, ShaderCache, SimParams, StorageType as _, VfxSimulateDriverNode, VfxSimulateNode
     },
     spawn::{self, Random},
     tick_spawners,
@@ -165,6 +165,11 @@ impl HanabiPlugin {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, Resource)]
+pub struct DummyStruct{
+    pub item: u32
+}
+
 impl Plugin for HanabiPlugin {
     fn build(&self, app: &mut App) {
         // Register asset
@@ -268,6 +273,8 @@ impl Plugin for HanabiPlugin {
             .init_resource::<SpecializedComputePipelines<ParticlesUtilityPipeline>>()
             .init_resource::<ParticlesUpdatePipeline>()
             .init_resource::<SpecializedComputePipelines<ParticlesUpdatePipeline>>()
+            .init_resource::<ParticlesExportPipeline>()
+            .init_resource::<SpecializedComputePipelines<ParticlesExportPipeline>>()
             .init_resource::<ParticlesRenderPipeline>()
             .init_resource::<SpecializedRenderPipelines<ParticlesRenderPipeline>>()
             .init_resource::<ExtractedEffects>()
@@ -289,9 +296,10 @@ impl Plugin for HanabiPlugin {
                 Render,
                 (
                     prepare_effects.in_set(EffectSystems::PrepareEffectAssets),
+                    prepare_effects_continue.in_set(EffectSystems::PrepareEffectAssets).after(prepare_effects),
                     queue_effects
                         .in_set(EffectSystems::QueueEffects)
-                        .after(prepare_effects),
+                        .after(prepare_effects_continue),
                     prepare_resources
                         .in_set(EffectSystems::PrepareEffectGpuResources)
                         .after(prepare_view_uniforms),
