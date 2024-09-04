@@ -655,6 +655,7 @@ pub(crate) struct EffectShader {
     pub init: Handle<Shader>,
     pub update: Vec<Handle<Shader>>,
     pub render: Vec<Handle<Shader>>,
+    pub export: Vec<Handle<Shader>>,
 }
 
 /// Source code (WGSL) of an effect.
@@ -668,6 +669,7 @@ struct EffectShaderSource {
     pub init: String,
     pub update: Vec<String>,
     pub render: Vec<String>,
+    pub export: Vec<String>,
     pub layout_flags: LayoutFlags,
     pub particle_texture: Option<Handle<Image>>,
 }
@@ -868,7 +870,7 @@ impl EffectShaderSource {
 
         let mut effect_particle_texture = None;
 
-        let (mut update_shader_sources, mut render_shader_sources) = (vec![], vec![]);
+        let (mut update_shader_sources, mut render_shader_sources, mut export_shader_sources) = (vec![], vec![], vec![]);
         for group_index in 0..asset.capacities().len() as u32 {
             // Generate the shader code for the update shader
             let (mut update_code, update_extra) = {
@@ -1055,14 +1057,29 @@ impl EffectShaderSource {
                 .replace("{{PARTICLE_TEXTURE_SAMPLE_MAPPING}}", &image_sample_mapping_code);
             warn!("Configured render shader:\n{}", render_shader_source);
 
+            let export_shader_source = PARTICLES_EXPORT_SHADER_TEMPLATE.replace(
+                "{{ATTRIBUTES}}",
+                &attributes_code
+            )
+                .replace("{{RENDER_EXTRA}}", &render_extra)
+                .replace("{{INPUTS}}", &inputs_code)
+                .replace("{{VERTEX_MODIFIERS}}", &vertex_code)
+                .replace("{{PROPERTIES}}", &properties_code)
+                .replace("{{PROPERTIES_BINDING}}", &properties_binding_code)
+                .replace("{{GROUP_INDEX}}", &group_index_code);
+                
+            warn!("Configured export shader:\n{}", export_shader_source);
+
             update_shader_sources.push(update_shader_source);
             render_shader_sources.push(render_shader_source);
+            export_shader_sources.push(export_shader_source);
         }
 
         Ok(EffectShaderSource {
             init: init_shader_source,
             update: update_shader_sources,
             render: render_shader_sources,
+            export: export_shader_sources,
             layout_flags,
             particle_texture: effect_particle_texture,
         })
@@ -1193,6 +1210,11 @@ impl CompiledParticleEffect {
             .iter()
             .map(|render_source| shader_cache.get_or_insert(&asset.name, render_source, shaders))
             .collect();
+        let export_shaders: Vec<_> = shader_source.export
+            .iter()
+            .map(|export_source| shader_cache.get_or_insert(&asset.name, export_source, shaders))
+            .collect();
+
 
         trace!(
             "CompiledParticleEffect::update(): init_shader={:?} update_shaders={:?} render_shaders={:?} has_image={} layout_flags={:?}",
@@ -1214,6 +1236,7 @@ impl CompiledParticleEffect {
             init: init_shader,
             update: update_shaders,
             render: render_shaders,
+            export: export_shaders,
         });
 
         self.particle_texture = shader_source.particle_texture;
@@ -1228,7 +1251,7 @@ impl CompiledParticleEffect {
 const PARTICLES_INIT_SHADER_TEMPLATE: &str = include_str!("render/vfx_init.wgsl");
 const PARTICLES_UPDATE_SHADER_TEMPLATE: &str = include_str!("render/vfx_update.wgsl");
 const PARTICLES_RENDER_SHADER_TEMPLATE: &str = include_str!("render/vfx_render.wgsl");
-
+const PARTICLES_EXPORT_SHADER_TEMPLATE: &str = include_str!("render/vfx_export.wgsl");
 /// Trait to convert any data structure to its equivalent shader code.
 trait ShaderCode {
     /// Generate the shader code for the current state of the object.

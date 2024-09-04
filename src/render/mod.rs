@@ -745,6 +745,7 @@ impl SpecializedComputePipeline for ParticlesUtilityPipeline{
 #[derive(Resource)]
 pub(crate) struct ParticlesExportPipeline {
     render_device: RenderDevice,
+    render_indirect_layout: BindGroupLayout,
     export_buffer_layout: BindGroupLayout,
 }
 
@@ -752,9 +753,40 @@ impl FromWorld for ParticlesExportPipeline{
     fn from_world(world: &mut World) -> Self {
         let world = world.cell();
         let render_device = world.get_resource::<RenderDevice>().unwrap();
+        let storage_alignment = render_device.limits().min_storage_buffer_offset_alignment;
+        let render_effect_indirect_size = GpuRenderEffectMetadata::aligned_size(storage_alignment);
+        let render_group_indirect_size = GpuRenderGroupIndirect::aligned_size(storage_alignment);
+        let render_indirect_layout = render_device.create_bind_group_layout(
+            "hanabi:update_render_indirect_layout",
+            &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(render_effect_indirect_size),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        // Array; needs padded size
+                        min_binding_size: Some(render_group_indirect_size),
+                    },
+                    count: None,
+                },
+            ]
+        );
 
         let export_buffer_layout = ExportBuffer::export_bind_group_layout(&render_device);
-        Self { render_device: render_device.clone(), export_buffer_layout }
+       
+       
+        Self { render_device: render_device.clone(), render_indirect_layout, export_buffer_layout }
 
     }
 }
@@ -831,8 +863,9 @@ impl SpecializedComputePipeline for ParticlesExportPipeline {
         ComputePipelineDescriptor {
             label: Some("hanabi:pipeline_update_compute".into()),
             layout: vec![
+                self.export_buffer_layout.clone(),
                 update_particles_buffer_layout,
-                self.export_buffer_layout.clone()
+                self.render_indirect_layout.clone(),
             ],
             shader: key.shader,
             shader_defs: vec!["REM_MAX_SPAWN_ATOMIC".into()],
@@ -2279,6 +2312,21 @@ pub(crate) fn prepare_effects(
             .collect();
         trace!("Update pipeline(s) specialized: ids={:?}", update_pipeline_ids);
 
+        let export_pipeline_ids: Vec<_> = input.effect_shader.export
+            .iter()
+            .map(|export_source|{
+                specialized_export_pipelines.specialize(
+                    &pipeline_cache,
+                    &export_pipeline,
+                    ParticleUpdatePipelineKey{
+                        shader: export_source.clone(),
+                        particle_layout: input.effect_slices.particle_layout.clone(),
+                        property_layout: input.property_layout.clone(),
+                    })
+            })
+            .collect();
+        trace!("Export pipeline(s) specialized: ids={:?}", export_pipeline_ids);
+
         let init_shader = input.effect_shader.init.clone();
         trace!("init_shader = {:?}", init_shader);
 
@@ -2371,6 +2419,7 @@ pub(crate) fn prepare_effects(
             effect_cache_id,
             init_pipeline_id,
             update_pipeline_ids,
+            export_pipeline_ids,
             dispatch_buffer_indices,
             first_particle_group_buffer_index.unwrap_or_default()
         );
@@ -3735,6 +3784,118 @@ impl Node for VfxSimulateNode {
             let workgroup_count = 1;
             compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
         }
+        
+        _count = 0;
+        // Compute update pass
+        {
+            // Dispatch update compute jobs
+            for (entity, batches) in self.effect_query.iter_manual(world) {
+                let effect_cache_id = batches.effect_cache_id;
+
+                let Some(particles_update_bind_group) =
+                    effect_cache.update_bind_group(effect_cache_id) else {
+                    error!(
+                        "Failed to find update particle buffer bind group for entity {:?}, effect cache ID {:?}",
+                        entity,
+                        effect_cache_id
+                    );
+                    continue;
+                };
+
+                let first_update_group_dispatch_buffer_index =
+                    batches.dispatch_buffer_indices.first_update_group_dispatch_buffer_index;
+
+                let spawner_base = batches.spawner_base;
+
+                let spawner_buffer_aligned = effects_meta.spawner_buffer.aligned_size();
+                assert!(spawner_buffer_aligned >= (GpuSpawnerParams::min_size().get() as usize));
+
+                let Some(update_render_indirect_bind_group) =
+                    &effect_bind_groups.update_render_indirect_bind_groups.get(
+                        &effect_cache_id
+                    ) else {
+                    error!(
+                        "Failed to find update render indirect bind group for effect cache ID: {:?}, IDs present: {:?}",
+                        effect_cache_id,
+                        effect_bind_groups.update_render_indirect_bind_groups
+                            .keys()
+                            .collect::<Vec<_>>()
+                    );
+                    continue;
+                };
+
+                for (group_index, update_pipeline_id) in batches.export_pipeline_ids
+                    .iter()
+                    .enumerate() {
+                    effect_cache.update_uniform(render_context.command_encoder(),_count);
+                    let mut compute_pass = render_context.command_encoder().begin_compute_pass(
+                        &(ComputePassDescriptor {
+                            label: Some("hanabi:export"),
+                            timestamp_writes: None,
+                        })
+                    );
+                    let Some(update_pipeline) = pipeline_cache.get_compute_pipeline(
+                        *update_pipeline_id
+                    ) else {
+                        error!(
+                            "Failed to find export pipeline #{} for effect {:?}, group {}",
+                            update_pipeline_id.id(),
+                            entity,
+                            group_index
+                        );
+                        continue;
+                    };
+
+                    let update_group_dispatch_buffer_offset =
+                        effects_meta.gpu_limits.dispatch_indirect_offset(
+                            first_update_group_dispatch_buffer_index.0 + (group_index as u32)
+                        );
+
+                    // for (effect_entity, effect_slice) in effects_meta.entity_map.iter() {
+                    // Retrieve the ExtractedEffect from the entity
+                    // trace!("effect_entity={:?} effect_slice={:?}", effect_entity,
+                    // effect_slice); let effect =
+                    // self.effect_query.get_manual(world, *effect_entity).unwrap();
+
+                    // Get the slice to update
+                    // let effect_slice = effects_meta.get(&effect_entity);
+                    // let effect_group =
+                    //     &effects_meta.effect_cache.buffers()[batch.buffer_index as usize];
+
+                    trace!(
+                        "record commands for update pipeline of effect {:?} \
+                        spawner_base={} update_group_dispatch_buffer_offset={}…",
+                        batches.handle,
+                        spawner_base,
+                        update_group_dispatch_buffer_offset
+                    );
+
+                    // Setup compute pass
+                    // compute_pass.set_pipeline(&effect_group.update_pipeline);
+                    compute_pass.set_pipeline(update_pipeline);
+                    compute_pass.set_bind_group(0, effect_cache.export_bind_group(), &[]);
+                    compute_pass.set_bind_group(1, particles_update_bind_group, &[]);
+                    compute_pass.set_bind_group(2, update_render_indirect_bind_group, &[]);
+                    
+                    if let Some(buffer) = effects_meta.dispatch_indirect_buffer.buffer() {
+                        trace!(
+                            "dispatch_workgroups_indirect: buffer={:?} offset={}",
+                            buffer,
+                            update_group_dispatch_buffer_offset
+                        );
+                        compute_pass.dispatch_workgroups_indirect(
+                            buffer,
+                            update_group_dispatch_buffer_offset as u64
+                        );
+                        // TODO - offset
+                    }
+
+                    trace!("export compute dispatched");
+                    _count += 1;
+                }
+            }
+        }
+
 
         Ok(())
     }
