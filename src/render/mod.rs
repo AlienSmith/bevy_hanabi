@@ -3648,7 +3648,8 @@ impl Node for VfxSimulateNode {
                 );
             }
         }
-
+        //TODO: clear buffer was not needed anymore, we might remove it later
+        effect_cache.clear_buffer(render_context.command_encoder());
         // Compute update pass
         {
             // Dispatch update compute jobs
@@ -3768,7 +3769,8 @@ impl Node for VfxSimulateNode {
                 }
             }
         }
-        // Compute utility pass
+
+        //Compute utility pass
         if let Some(id) = effect_cache.utility_pipeline_id {
             effect_cache.update_uniform(render_context.command_encoder(),_count);
             let mut compute_pass = render_context.command_encoder().begin_compute_pass(

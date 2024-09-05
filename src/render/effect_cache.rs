@@ -135,9 +135,14 @@ impl ExportBuffer {
         ];
         render_device.create_bind_group_layout(label, &entries)
     }
+
     //we need to use copy_buffer_to_buffer cause queue.write_buffer won't update between dispatches
     pub fn update_uniform(&self,  encoder: &mut CommandEncoder, index: u64) {
         encoder.copy_buffer_to_buffer(&self.staging_buffer, index * Self::MIN_UNIFORM_SIZE, &self.uniform, 0, Self::MIN_UNIFORM_SIZE);
+    }
+
+    pub fn clear_buffer(&self, encoder: &mut CommandEncoder) {
+        encoder.clear_buffer(&self.buffer, 0, None);
     }
 
     fn new(render_device: &RenderDevice, render_queue: &RenderQueue) -> Self{
@@ -968,6 +973,10 @@ impl EffectCache {
 
     pub fn update_uniform(&self,  encoder: &mut CommandEncoder, index: u64) {
         self.exports.update_uniform(encoder, index);
+    }
+
+    pub fn clear_buffer(&self, encoder: &mut CommandEncoder) {
+        self.exports.clear_buffer(encoder);
     }
 
     /// Get the update bind group for a cached effect.
