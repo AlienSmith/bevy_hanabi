@@ -2,7 +2,6 @@
     missing_copy_implementations,
     trivial_casts,
     trivial_numeric_casts,
-    missing_docs,
     unsafe_code,
     unstable_features,
     unused_import_braces,
@@ -181,7 +180,7 @@ pub mod graph;
 pub mod modifier;
 mod plugin;
 pub mod properties;
-mod render;
+pub mod render;
 mod spawn;
 mod time;
 
@@ -196,7 +195,7 @@ pub use graph::*;
 pub use modifier::*;
 pub use plugin::{ EffectSystems, HanabiPlugin };
 pub use properties::*;
-pub use render::{ LayoutFlags, ShaderCache };
+pub use render::{ LayoutFlags, ShaderCache, EffectCache };
 pub use spawn::{ tick_spawners, CpuValue, EffectSpawner, Random, Spawner };
 pub use time::{ EffectSimulation, EffectSimulationTime };
 

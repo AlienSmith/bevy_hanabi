@@ -38,7 +38,7 @@ use bevy::core_pipeline::core_2d::Transparent2d;
 use bevy::core_pipeline::core_3d::{ AlphaMask3d, Transparent3d };
 
 use crate::{
-    asset::EffectAsset, next_multiple_of, plugin::DummyStruct, render::{ batch::{ BatchesInput, EffectDrawBatch }, effect_cache::DispatchBufferIndices }, spawn::EffectSpawner, CompiledParticleEffect, EffectProperties, EffectShader, EffectSimulation, HanabiPlugin, ParticleLayout, PropertyLayout, RemovedEffectsEvent, SimulationCondition, ToWgslString
+    asset::EffectAsset, next_multiple_of, render::{ batch::{ BatchesInput, EffectDrawBatch }, effect_cache::DispatchBufferIndices }, spawn::EffectSpawner, CompiledParticleEffect, EffectProperties, EffectShader, EffectSimulation, HanabiPlugin, ParticleLayout, PropertyLayout, RemovedEffectsEvent, SimulationCondition, ToWgslString
 };
 
 mod aligned_buffer_vec;
@@ -49,8 +49,8 @@ mod shader_cache;
 
 use aligned_buffer_vec::AlignedBufferVec;
 use buffer_table::{ BufferTable, BufferTableId };
-pub(crate) use effect_cache::{ EffectCache, EffectCacheId };
-
+pub(crate) use effect_cache::EffectCacheId;
+pub use effect_cache::EffectCache;
 pub use shader_cache::ShaderCache;
 
 use self::batch::EffectBatches;

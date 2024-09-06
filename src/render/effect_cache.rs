@@ -145,6 +145,10 @@ impl ExportBuffer {
         encoder.clear_buffer(&self.buffer, 0, None);
     }
 
+    pub fn obtain_export_buffer(&self) -> BufferSlice{
+        self.buffer.slice(0..Self::MIN_BUFFER_SIZE)
+    }
+
     fn new(render_device: &RenderDevice, render_queue: &RenderQueue) -> Self{
         let label = Some("export");
         let buffer = render_device.create_buffer(&BufferDescriptor {
@@ -844,7 +848,7 @@ impl EffectCache {
         &mut self.buffers
     }
 
-    pub fn insert(
+    pub(crate) fn insert(
         &mut self,
         asset: Handle<EffectAsset>,
         capacities: Vec<u32>,
@@ -942,7 +946,7 @@ impl EffectCache {
         id
     }
 
-    pub fn get_slices(&self, id: EffectCacheId) -> EffectSlices {
+    pub(crate) fn get_slices(&self, id: EffectCacheId) -> EffectSlices {
         self.effects
             .get(&id)
             .map(|indices| EffectSlices {
@@ -958,7 +962,7 @@ impl EffectCache {
     }
 
     /// Get the init bind group for a cached effect.
-    pub fn init_bind_group(&self, id: EffectCacheId) -> Option<&BindGroup> {
+    pub(crate) fn init_bind_group(&self, id: EffectCacheId) -> Option<&BindGroup> {
         if let Some(indices) = self.effects.get(&id) {
             if let Some(effect_buffer) = &self.buffers[indices.buffer_index as usize] {
                 return effect_buffer.sim_bind_group();
@@ -979,13 +983,17 @@ impl EffectCache {
         self.exports.clear_buffer(encoder);
     }
 
+    pub fn obtain_export_buffer(&self) -> BufferSlice {
+        self.exports.obtain_export_buffer()
+    }
+
     /// Get the update bind group for a cached effect.
     #[inline]
-    pub fn update_bind_group(&self, id: EffectCacheId) -> Option<&BindGroup> {
+    pub(crate) fn update_bind_group(&self, id: EffectCacheId) -> Option<&BindGroup> {
         self.init_bind_group(id)
     }
 
-    pub fn get_property_buffer(&self, id: EffectCacheId) -> Option<&Buffer> {
+    pub(crate) fn get_property_buffer(&self, id: EffectCacheId) -> Option<&Buffer> {
         if let Some(cached_effect_indices) = self.effects.get(&id) {
             if let Some(buffer) = &self.buffers[cached_effect_indices.buffer_index as usize] {
                 buffer.properties_buffer()
@@ -999,7 +1007,7 @@ impl EffectCache {
 
     /// Remove an effect from the cache. If this was the last effect, drop the
     /// underlying buffer and return the index of the dropped buffer.
-    pub fn remove(&mut self, id: EffectCacheId) -> Option<CachedEffectIndices> {
+    pub(crate) fn remove(&mut self, id: EffectCacheId) -> Option<CachedEffectIndices> {
         let indices = self.effects.remove(&id)?;
         let &mut Some(ref mut buffer) = &mut self.buffers[indices.buffer_index as usize] else {
             return None;
@@ -1261,13 +1269,14 @@ mod gpu_tests {
     fn effect_cache() {
         let renderer = MockRenderer::new();
         let render_device = renderer.device();
+        let queue = renderer.queue();
 
         let empty_property_layout = PropertyLayout::empty(); // not using properties
 
         let l32 = ParticleLayout::new().append(F4A).append(F4B).build();
         assert_eq!(32, l32.size());
 
-        let mut effect_cache = EffectCache::new(render_device);
+        let mut effect_cache = EffectCache::new(render_device, queue);
         assert_eq!(effect_cache.buffers().len(), 0);
 
         let asset = Handle::<EffectAsset>::default();
