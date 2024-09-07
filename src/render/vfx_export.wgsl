@@ -6,7 +6,7 @@
 
 //at most 256 particle groups are supported
 const WG_SIZE = 256u;
-const EXPORT_SIZE = 3u;
+const EXPORT_SIZE = 2u;
 
 struct Particle {
 {{ATTRIBUTES}}
@@ -54,7 +54,6 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
 {{VERTEX_MODIFIERS}}
 
     var export_index = WG_SIZE + (start + thread_index) * EXPORT_SIZE;
-    export_buffer[export_index] = f32(particle_index);
-    export_buffer[export_index + 1u] = position.x;
-    export_buffer[export_index + 2u] = position.y;
+    export_buffer[export_index] = position.x;
+    export_buffer[export_index + 1u] = position.y;
 }

@@ -145,8 +145,8 @@ impl ExportBuffer {
         encoder.clear_buffer(&self.buffer, 0, None);
     }
 
-    pub fn obtain_export_buffer(&self) -> BufferSlice{
-        self.buffer.slice(0..Self::MIN_BUFFER_SIZE)
+    pub fn obtain_export_buffer(&self) -> &Buffer{
+        &self.buffer
     }
 
     fn new(render_device: &RenderDevice, render_queue: &RenderQueue) -> Self{
@@ -983,7 +983,7 @@ impl EffectCache {
         self.exports.clear_buffer(encoder);
     }
 
-    pub fn obtain_export_buffer(&self) -> BufferSlice {
+    pub fn obtain_export_buffer(&self) -> &Buffer {
         self.exports.obtain_export_buffer()
     }
 
