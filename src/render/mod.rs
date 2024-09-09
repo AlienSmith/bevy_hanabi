@@ -3648,7 +3648,7 @@ impl Node for VfxSimulateNode {
                 );
             }
         }
-        //TODO: clear buffer was not needed anymore, we might remove it later
+        //clear buffer here to allow particle counts to reduce
         effect_cache.clear_buffer(render_context.command_encoder());
         // Compute update pass
         {
