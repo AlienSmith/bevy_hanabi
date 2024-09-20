@@ -6,7 +6,7 @@
 
 //at most 256 particle groups are supported
 const WG_SIZE = 256u;
-const EXPORT_SIZE = 2u;
+const EXPORT_SIZE = 6u;
 
 struct Particle {
 {{ATTRIBUTES}}
@@ -27,6 +27,9 @@ struct ParticleBuffer {
 @group(2) @binding(0) var<storage, read_write> render_effect_indirect : RenderEffectMetadata;
 @group(2) @binding(1) var<storage, read_write> render_group_indirect : array<RenderGroupIndirect>;
 
+
+fn get_camera_position_effect_space() -> vec3<f32> {{ return vec3<f32>(); }}
+fn get_camera_rotation_effect_space() -> mat3x3<f32> {{ return mat3x3<f32>(); }}
 
 {{RENDER_EXTRA}}
 
@@ -54,6 +57,10 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
 {{VERTEX_MODIFIERS}}
 
     var export_index = WG_SIZE + (start + thread_index) * EXPORT_SIZE;
-    export_buffer[export_index] = bitcast<u32>(position.x);
-    export_buffer[export_index + 1u] = bitcast<u32>(position.y);
+    export_buffer[export_index] = bitcast<u32>(axis_x.x * size.x);
+    export_buffer[export_index + 1u] = bitcast<u32>(axis_x.y * size.x);
+    export_buffer[export_index + 2u] = bitcast<u32>(axis_y.x * size.y);
+    export_buffer[export_index + 3u] = bitcast<u32>(axis_y.y * size.y);
+    export_buffer[export_index + 4u] = bitcast<u32>(position.x);
+    export_buffer[export_index + 5u] = bitcast<u32>(position.y);
 }
