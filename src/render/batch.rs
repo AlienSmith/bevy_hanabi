@@ -60,6 +60,8 @@ pub(crate) struct EffectBatches {
     pub update_pipeline_ids: Vec<CachedComputePipelineId>,
 
     pub export_pipeline_ids: Vec<CachedComputePipelineId>,
+
+    pub export_index: u32,
 }
 
 impl Index<u32> for EffectBatches {
@@ -110,6 +112,7 @@ impl EffectBatches {
         export_pipeline_ids: Vec<CachedComputePipelineId>,
         dispatch_buffer_indices: DispatchBufferIndices,
         first_particle_group_buffer_index: u32,
+        export_index: u32,
     ) -> EffectBatches {
         EffectBatches {
             buffer_index: input.effect_slices.buffer_index,
@@ -135,6 +138,7 @@ impl EffectBatches {
             update_pipeline_ids,
             export_pipeline_ids,
             entities: vec![input.entity.index()],
+            export_index,
         }
     }
 }

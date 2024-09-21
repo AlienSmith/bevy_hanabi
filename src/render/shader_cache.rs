@@ -58,11 +58,11 @@ impl ShaderCache {
         }
     }
 
-    pub(crate) fn set_utility_shader(&mut self, handle:Handle<Shader>) {
+    pub(crate) fn set_utility_shader(&mut self, handle: Handle<Shader>) {
         self.utility = Some(handle);
     }
 
-    pub(crate) fn get_utility_shader(&self) -> Option<Handle<Shader>>{
+    pub(crate) fn get_utility_shader(&self) -> Option<Handle<Shader>> {
         self.utility.clone()
     }
 }

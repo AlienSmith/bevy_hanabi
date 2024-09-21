@@ -16,11 +16,17 @@ use bevy::{
 };
 
 use crate::{
-    asset::{EffectAsset, EffectAssetLoader},
+    asset::{EffectAsset, EffectAssetCounter, EffectAssetLoader},
     compile_effects, gather_removed_effects,
     properties::EffectProperties,
     render::{
-        extract_effect_events, extract_effects, prepare_bind_groups, prepare_effects, prepare_effects_continue, prepare_resources, queue_effects, DispatchIndirectPipeline, DrawEffects, EffectAssetEvents, EffectBindGroups, EffectCache, EffectsMeta, ExtractedEffects, GpuDispatchIndirect, GpuParticleGroup, GpuRenderEffectMetadata, GpuRenderGroupIndirect, GpuSpawnerParams, ParticlesExportPipeline, ParticlesInitPipeline, ParticlesRenderPipeline, ParticlesUpdatePipeline, ParticlesUtilityPipeline, ShaderCache, SimParams, StorageType as _, VfxSimulateDriverNode, VfxSimulateNode
+        extract_effect_events, extract_effects, prepare_bind_groups, prepare_effects,
+        prepare_effects_add_remove, prepare_resources, queue_effects, DispatchIndirectPipeline,
+        DrawEffects, EffectAssetEvents, EffectBindGroups, EffectCache, EffectsMeta,
+        ExtractedEffects, GpuDispatchIndirect, GpuParticleGroup, GpuRenderEffectMetadata,
+        GpuRenderGroupIndirect, GpuSpawnerParams, ParticlesExportPipeline, ParticlesInitPipeline,
+        ParticlesRenderPipeline, ParticlesUpdatePipeline, ParticlesUtilityPipeline, ShaderCache,
+        SimParams, StorageType as _, VfxSimulateDriverNode, VfxSimulateNode,
     },
     spawn::{self, Random},
     tick_spawners,
@@ -166,8 +172,8 @@ impl HanabiPlugin {
 }
 
 #[derive(Debug, Default, Clone, Copy, Resource)]
-pub struct DummyStruct{
-    pub item: u32
+pub struct DummyStruct {
+    pub item: u32,
 }
 
 impl Plugin for HanabiPlugin {
@@ -177,6 +183,7 @@ impl Plugin for HanabiPlugin {
             .add_event::<RemovedEffectsEvent>()
             .insert_resource(Random(spawn::new_rng()))
             .init_resource::<ShaderCache>()
+            .init_resource::<EffectAssetCounter>()
             .init_asset_loader::<EffectAssetLoader>()
             .init_resource::<Time<EffectSimulation>>()
             .configure_sets(
@@ -295,11 +302,13 @@ impl Plugin for HanabiPlugin {
             .add_systems(
                 Render,
                 (
-                    prepare_effects.in_set(EffectSystems::PrepareEffectAssets),
-                    prepare_effects_continue.in_set(EffectSystems::PrepareEffectAssets).after(prepare_effects),
+                    prepare_effects_add_remove.in_set(EffectSystems::PrepareEffectAssets),
+                    prepare_effects
+                        .in_set(EffectSystems::PrepareEffectAssets)
+                        .after(prepare_effects_add_remove),
                     queue_effects
                         .in_set(EffectSystems::QueueEffects)
-                        .after(prepare_effects_continue),
+                        .after(prepare_effects),
                     prepare_resources
                         .in_set(EffectSystems::PrepareEffectGpuResources)
                         .after(prepare_view_uniforms),

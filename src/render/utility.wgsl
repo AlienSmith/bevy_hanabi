@@ -11,7 +11,7 @@ var<workgroup> sh: array<u32, WG_SIZE>;
 
 @compute @workgroup_size(256)
 fn main(@builtin(local_invocation_id) local_id: vec3<u32>) {
-    var count = select(export_buffer[local_id.x], 0u, local_id.x >= max_index);
+    var count = export_buffer[local_id.x];
     sh[local_id.x] = count;
         for (var i = 0u; i < firstTrailingBit(WG_SIZE); i += 1u) {
         workgroupBarrier();
@@ -23,6 +23,5 @@ fn main(@builtin(local_invocation_id) local_id: vec3<u32>) {
         sh[local_id.x] = count;
     }
     workgroupBarrier();
-    count = select(count, 0u, local_id.x >= max_index);
     export_buffer[local_id.x] = count;
 }

@@ -1,10 +1,12 @@
 use bevy::{
     asset::{io::Reader, Asset, AssetLoader, AsyncReadExt, LoadContext},
+    math::Vec2,
+    prelude::{Entity, Resource},
     reflect::Reflect,
-    utils::{default, thiserror::Error, BoxedFuture, HashSet},
+    utils::{default, hashbrown::HashMap, thiserror::Error, BoxedFuture, HashSet},
 };
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
+use std::{collections::VecDeque, ops::Deref};
 
 use crate::{
     modifier::{Modifier, RenderModifier},
@@ -161,6 +163,43 @@ pub enum AlphaMode {
     /// [`AlphaMask3d`]: bevy::core_pipeline::core_3d::AlphaMask3d
     Mask(ExprHandle),
 }
+#[derive(Copy, Clone, Default, Reflect, Serialize, Deserialize)]
+pub struct EffectAssetCounterToken {
+    pub index: u32,
+    pub generation: u32,
+}
+
+#[derive(Resource)]
+pub struct EffectAssetCounter {
+    generation: [u32; crate::MIN_PARTICLES_COUNT as usize],
+    free: VecDeque<u32>,
+    entity_map: HashMap<Entity, u32>,
+}
+
+impl Default for EffectAssetCounter {
+    fn default() -> Self {
+        let vector: Vec<u32> = (0..crate::MIN_PARTICLES_COUNT as u32).collect();
+        Self {
+            generation: [0; crate::MIN_PARTICLES_COUNT as usize],
+            free: VecDeque::from(vector),
+            entity_map: HashMap::default(),
+        }
+    }
+}
+
+impl EffectAssetCounter {
+    pub fn alloc(&mut self) -> EffectAssetCounterToken {
+        let index = self.free.pop_front().unwrap();
+        self.generation[index as usize] += 1;
+        let generation = self.generation[index as usize];
+        EffectAssetCounterToken { index, generation }
+    }
+
+    pub fn free(&mut self, token: EffectAssetCounterToken) {
+        assert!(token.generation == self.generation[token.index as usize]);
+        self.free.push_back(token.index);
+    }
+}
 
 /// Asset describing a visual effect.
 ///
@@ -219,6 +258,8 @@ pub struct EffectAsset {
     module: Module,
     /// Alpha mode.
     pub alpha_mode: AlphaMode,
+
+    pub token: EffectAssetCounterToken,
 }
 
 impl EffectAsset {
@@ -281,6 +322,11 @@ impl EffectAsset {
             module,
             ..default()
         }
+    }
+
+    pub fn with_token(mut self, token: EffectAssetCounterToken) -> Self {
+        self.token = token;
+        self
     }
 
     /// Get the capacities of the effect, in number of particles per group.
