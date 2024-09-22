@@ -685,7 +685,7 @@ mod test {
         tasks::{IoTaskPool, TaskPoolBuilder},
     };
 
-    use crate::Module;
+    use crate::{EffectAssetCounterToken, Module};
 
     use super::*;
 
@@ -932,6 +932,7 @@ mod test {
                                 handle: handle.clone(),
                                 #[cfg(feature = "2d")]
                                 z_layer_2d: None,
+                                token: EffectAssetCounterToken::default(),
                             },
                         ))
                         .id()
@@ -941,6 +942,7 @@ mod test {
                             handle: handle.clone(),
                             #[cfg(feature = "2d")]
                             z_layer_2d: None,
+                            token: EffectAssetCounterToken::default(),
                         },))
                         .id()
                 };

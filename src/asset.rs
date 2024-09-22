@@ -163,10 +163,11 @@ pub enum AlphaMode {
     /// [`AlphaMask3d`]: bevy::core_pipeline::core_3d::AlphaMask3d
     Mask(ExprHandle),
 }
-#[derive(Copy, Clone, Default, Reflect, Serialize, Deserialize)]
+#[derive(Copy, Clone, Default, Reflect, Serialize, Deserialize, Debug)]
 pub struct EffectAssetCounterToken {
     pub index: u32,
     pub generation: u32,
+    pub size: u32,
 }
 
 #[derive(Resource)]
@@ -188,16 +189,21 @@ impl Default for EffectAssetCounter {
 }
 
 impl EffectAssetCounter {
-    pub fn alloc(&mut self) -> EffectAssetCounterToken {
+    pub fn alloc(&mut self, entity: Entity, size: u32) -> EffectAssetCounterToken {
         let index = self.free.pop_front().unwrap();
         self.generation[index as usize] += 1;
         let generation = self.generation[index as usize];
-        EffectAssetCounterToken { index, generation }
+        self.entity_map.insert(entity, index);
+        EffectAssetCounterToken {
+            index,
+            generation,
+            size,
+        }
     }
 
-    pub fn free(&mut self, token: EffectAssetCounterToken) {
-        assert!(token.generation == self.generation[token.index as usize]);
-        self.free.push_back(token.index);
+    pub fn free(&mut self, entity: &Entity) {
+        let index = self.entity_map.get(entity).unwrap();
+        self.free.push_back(*index);
     }
 }
 
@@ -258,8 +264,6 @@ pub struct EffectAsset {
     module: Module,
     /// Alpha mode.
     pub alpha_mode: AlphaMode,
-
-    pub token: EffectAssetCounterToken,
 }
 
 impl EffectAsset {
@@ -322,11 +326,6 @@ impl EffectAsset {
             module,
             ..default()
         }
-    }
-
-    pub fn with_token(mut self, token: EffectAssetCounterToken) -> Self {
-        self.token = token;
-        self
     }
 
     /// Get the capacities of the effect, in number of particles per group.

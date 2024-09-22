@@ -37,6 +37,7 @@ use crate::{
 /// Labels for the Hanabi systems.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemSet)]
 pub enum EffectSystems {
+    BeforeCompile,
     /// Tick all effect instances to generate particle spawn counts.
     ///
     /// This system runs during the [`PostUpdate`] schedule. Any system which
@@ -189,11 +190,12 @@ impl Plugin for HanabiPlugin {
             .configure_sets(
                 PostUpdate,
                 (
+                    EffectSystems::BeforeCompile,
                     EffectSystems::TickSpawners
                         // This checks the visibility to skip work, so needs to run after
                         // ComputedVisibility was updated.
                         .after(VisibilitySystems::VisibilityPropagate),
-                    EffectSystems::CompileEffects,
+                    EffectSystems::CompileEffects.after(EffectSystems::BeforeCompile),
                     EffectSystems::GatherRemovedEffects,
                 ),
             )

@@ -1650,6 +1650,7 @@ pub(crate) fn extract_effects(
                 property_layout,
                 effect.layout_flags
             );
+            println!("added_effect {}", effect.export_token.index);
             AddedEffect {
                 entity,
                 capacities: asset.capacities().to_vec(),
@@ -1657,7 +1658,7 @@ pub(crate) fn extract_effects(
                 property_layout,
                 layout_flags: effect.layout_flags,
                 handle,
-                export_token: asset.token
+                export_token: effect.export_token,
             }
         })
         .collect();
@@ -3849,14 +3850,11 @@ impl Node for VfxSimulateNode {
                     );
                     continue;
                 };
-
+                let mut export_index = batches.export_index as u64;
                 for (group_index, update_pipeline_id) in
                     batches.update_pipeline_ids.iter().enumerate()
                 {
-                    effect_cache.update_uniform(
-                        render_context.command_encoder(),
-                        batches.export_index as u64,
-                    );
+                    effect_cache.update_uniform(render_context.command_encoder(), export_index);
                     let mut compute_pass = render_context.command_encoder().begin_compute_pass(
                         &(ComputePassDescriptor {
                             label: Some("hanabi:update"),
@@ -3930,6 +3928,7 @@ impl Node for VfxSimulateNode {
                     }
 
                     trace!("update compute dispatched");
+                    export_index += 1;
                 }
             }
         }
@@ -3988,14 +3987,11 @@ impl Node for VfxSimulateNode {
                     );
                     continue;
                 };
-
+                let mut export_index = batches.export_index as u64;
                 for (group_index, export_pipeline_id) in
                     batches.export_pipeline_ids.iter().enumerate()
                 {
-                    effect_cache.update_uniform(
-                        render_context.command_encoder(),
-                        batches.export_index as u64,
-                    );
+                    effect_cache.update_uniform(render_context.command_encoder(), export_index);
                     let mut compute_pass = render_context.command_encoder().begin_compute_pass(
                         &(ComputePassDescriptor {
                             label: Some("hanabi:export"),
@@ -4059,6 +4055,7 @@ impl Node for VfxSimulateNode {
                     }
 
                     trace!("export compute dispatched");
+                    export_index += 1;
                 }
             }
         }

@@ -641,6 +641,8 @@ pub struct ParticleEffect {
     /// This is only available with the `2d` feature.
     #[cfg(feature = "2d")]
     pub z_layer_2d: Option<f32>,
+
+    pub token: EffectAssetCounterToken,
 }
 
 impl ParticleEffect {
@@ -650,6 +652,7 @@ impl ParticleEffect {
             handle,
             #[cfg(feature = "2d")]
             z_layer_2d: None,
+            token: EffectAssetCounterToken::default(),
         }
     }
 
@@ -1141,6 +1144,8 @@ pub struct CompiledParticleEffect {
     z_layer_2d: FloatOrd,
     /// Layout flags.
     layout_flags: LayoutFlags,
+
+    export_token: EffectAssetCounterToken,
 }
 
 impl Default for CompiledParticleEffect {
@@ -1153,6 +1158,7 @@ impl Default for CompiledParticleEffect {
             #[cfg(feature = "2d")]
             z_layer_2d: FloatOrd(0.0),
             layout_flags: LayoutFlags::NONE,
+            export_token: EffectAssetCounterToken::default(),
         }
     }
 }
@@ -1174,6 +1180,7 @@ impl CompiledParticleEffect {
         asset: &EffectAsset,
         shaders: &mut ResMut<Assets<Shader>>,
         shader_cache: &mut ResMut<ShaderCache>,
+        token: EffectAssetCounterToken,
     ) {
         trace!(
             "Updating (rebuild:{}) compiled particle effect '{}' ({:?})",
@@ -1182,6 +1189,7 @@ impl CompiledParticleEffect {
             handle
         );
 
+        self.export_token = token;
         // #289 - Panic in fn extract_effects
         // We now keep a strong handle. Since CompiledParticleEffect is kept in sync
         // with the source ParticleEffect, this shouldn't produce any strong cyclic
@@ -1440,6 +1448,7 @@ fn compile_effects(
             asset,
             &mut shaders,
             &mut shader_cache,
+            effect.token,
         );
     }
 
