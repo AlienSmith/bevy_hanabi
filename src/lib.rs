@@ -200,7 +200,7 @@ pub use bundle::ParticleEffectBundle;
 pub use gradient::{Gradient, GradientKey};
 pub use graph::*;
 pub use modifier::*;
-pub use plugin::{EffectSystems, HanabiPlugin};
+pub use plugin::{main_graph::node::HanabiDriverNode, EffectSystems, HanabiPlugin};
 pub use properties::*;
 pub use render::{EffectCache, LayoutFlags, ShaderCache};
 pub use spawn::{tick_spawners, CpuValue, EffectSpawner, Random, Spawner};

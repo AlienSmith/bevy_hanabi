@@ -47,9 +47,9 @@ use crate::{
         effect_cache::DispatchBufferIndices,
     },
     spawn::EffectSpawner,
-    CompiledParticleEffect, EffectAssetCounter, EffectAssetCounterToken, EffectProperties,
-    EffectShader, EffectSimulation, HanabiPlugin, ParticleLayout, PropertyLayout,
-    RemovedEffectsEvent, SimulationCondition, ToWgslString,
+    CompiledParticleEffect, EffectAssetCounterToken, EffectProperties, EffectShader,
+    EffectSimulation, HanabiPlugin, ParticleLayout, PropertyLayout, RemovedEffectsEvent,
+    SimulationCondition, ToWgslString,
 };
 
 mod aligned_buffer_vec;
