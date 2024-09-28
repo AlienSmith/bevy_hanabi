@@ -76,6 +76,6 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
         let indirect_index = atomicAdd(&render_group_indirect[{{GROUP_INDEX}}].instance_count, 1u);
         indirect_buffer.indices[3u * (base_index + indirect_index) + ping] = index;
     }
-    let value = 65536u - atomicLoad(&render_group_indirect[{{GROUP_INDEX}}].instance_count);
+    let value = 65536u - atomicLoad(&render_group_indirect[{{GROUP_INDEX}}].alive_count);
     atomicMax(&export_buffer[particle_index], value);
 }

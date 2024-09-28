@@ -105,7 +105,9 @@ pub struct ExportBuffer {
     pub bind_group: BindGroup,
 }
 impl ExportBuffer {
-    pub const MIN_BUFFER_SIZE: u64 = 65536;
+    //16 MB of export buffer (256 particles with 2048 instance each)
+    //TODO: make it dynamic sized
+    pub const MIN_BUFFER_SIZE: u64 = 2 << 23;
     pub const MIN_UNIFORM_SIZE: u64 = 4;
     pub fn export_bind_group_layout(render_device: &RenderDevice) -> BindGroupLayout {
         let label = Some("export");
