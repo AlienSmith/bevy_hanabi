@@ -683,7 +683,7 @@ mod test {
     };
 
     use super::*;
-    use crate::Module;
+    use crate::{EffectAssetCounterToken, Module};
 
     /// Make an `EffectSpawner` wrapping a `Spawner`.
     fn make_effect_spawner(spawner: Spawner) -> EffectSpawner {
@@ -927,6 +927,7 @@ mod test {
                                 handle: handle.clone(),
                                 #[cfg(feature = "2d")]
                                 z_layer_2d: None,
+                                token: EffectAssetCounterToken::default(),
                             },
                         ))
                         .id()
@@ -936,6 +937,7 @@ mod test {
                             handle: handle.clone(),
                             #[cfg(feature = "2d")]
                             z_layer_2d: None,
+                            token: EffectAssetCounterToken::default(),
                         },))
                         .id()
                 };

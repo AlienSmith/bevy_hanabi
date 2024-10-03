@@ -21,6 +21,7 @@ use bevy::{
 pub struct ShaderCache {
     /// Map of allocated shader resources from their baked shader code.
     cache: HashMap<String, Handle<Shader>>,
+    pub(crate) utility: Option<Handle<Shader>>,
 }
 
 impl ShaderCache {
@@ -55,5 +56,13 @@ impl ShaderCache {
             self.cache.insert(source.to_string(), handle.clone());
             handle
         }
+    }
+
+    pub(crate) fn set_utility_shader(&mut self, handle: Handle<Shader>) {
+        self.utility = Some(handle);
+    }
+
+    pub(crate) fn get_utility_shader(&self) -> Option<Handle<Shader>> {
+        self.utility.clone()
     }
 }

@@ -43,6 +43,7 @@ use bevy::{
 };
 use bitflags::bitflags;
 use bytemuck::{Pod, Zeroable};
+use effect_cache::ExportBuffer;
 use fixedbitset::FixedBitSet;
 use naga_oil::compose::{Composer, NagaModuleDescriptor};
 use rand::random;
@@ -56,9 +57,9 @@ use crate::{
         effect_cache::DispatchBufferIndices,
     },
     spawn::EffectSpawner,
-    AlphaMode, CompiledParticleEffect, EffectProperties, EffectShader, EffectSimulation,
-    HanabiPlugin, ParticleLayout, PropertyLayout, RemovedEffectsEvent, SimulationCondition,
-    TextureLayout, ToWgslString,
+    AlphaMode, CompiledParticleEffect, EffectAssetCounterToken, EffectProperties, EffectShader,
+    EffectSimulation, HanabiPlugin, ParticleLayout, PropertyLayout, RemovedEffectsEvent,
+    SimulationCondition, TextureLayout, ToWgslString,
 };
 
 mod aligned_buffer_vec;
@@ -69,7 +70,8 @@ mod shader_cache;
 
 use aligned_buffer_vec::AlignedBufferVec;
 use buffer_table::{BufferTable, BufferTableId};
-pub(crate) use effect_cache::{EffectCache, EffectCacheId};
+pub use effect_cache::EffectCache;
+pub(crate) use effect_cache::EffectCacheId;
 pub use shader_cache::ShaderCache;
 
 use self::batch::EffectBatches;
@@ -433,11 +435,13 @@ impl FromWorld for DispatchIndirectPipeline {
             }],
         );
 
-        let pipeline_layout = render_device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("hanabi:pipeline_layout:dispatch_indirect"),
-            bind_group_layouts: &[&dispatch_indirect_layout, &sim_params_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout = render_device.create_pipeline_layout(
+            &(PipelineLayoutDescriptor {
+                label: Some("hanabi:pipeline_layout:dispatch_indirect"),
+                bind_group_layouts: &[&dispatch_indirect_layout, &sim_params_layout],
+                push_constant_ranges: &[],
+            }),
+        );
 
         let render_effect_indirect_stride_code =
             (render_effect_indirect_size.get() as u32).to_wgsl_string();
@@ -494,7 +498,7 @@ impl FromWorld for DispatchIndirectPipeline {
             }
         };
 
-        debug!("Create indirect dispatch shader:\n{}", indirect_code);
+        //warn!("Create indirect dispatch shader:\n{}", indirect_code);
 
         let shader_module = render_device.create_shader_module(ShaderModuleDescriptor {
             label: Some("hanabi:vfx_indirect_shader"),
@@ -532,8 +536,14 @@ impl FromWorld for ParticlesInitPipeline {
         let limits = render_device.limits();
         bevy::log::info!(
             "GPU limits:\n- max_compute_invocations_per_workgroup={}\n- max_compute_workgroup_size_x={}\n- max_compute_workgroup_size_y={}\n- max_compute_workgroup_size_z={}\n- max_compute_workgroups_per_dimension={}\n- min_storage_buffer_offset_alignment={}\n- max_storage_buffers_per_shader_stage={}\n- max_bind_groups={}",
-            limits.max_compute_invocations_per_workgroup, limits.max_compute_workgroup_size_x, limits.max_compute_workgroup_size_y, limits.max_compute_workgroup_size_z,
-            limits.max_compute_workgroups_per_dimension, limits.min_storage_buffer_offset_alignment, limits.max_storage_buffers_per_shader_stage, limits.max_bind_groups
+            limits.max_compute_invocations_per_workgroup,
+            limits.max_compute_workgroup_size_x,
+            limits.max_compute_workgroup_size_y,
+            limits.max_compute_workgroup_size_z,
+            limits.max_compute_workgroups_per_dimension,
+            limits.min_storage_buffer_offset_alignment,
+            limits.max_storage_buffers_per_shader_stage,
+            limits.max_bind_groups
         );
 
         trace!("GpuSimParams: min_size={}", GpuSimParams::min_size());
@@ -577,7 +587,7 @@ impl FromWorld for ParticlesInitPipeline {
             GpuRenderEffectMetadata::min_size(),
             render_effect_indirect_size.get(),
             GpuRenderGroupIndirect::min_size(),
-            render_group_indirect_size.get(),
+            render_group_indirect_size.get()
         );
         let render_indirect_layout = render_device.create_bind_group_layout(
             "hanabi:bind_group_layout:init_render_indirect",
@@ -637,10 +647,10 @@ impl SpecializedComputePipeline for ParticlesInitPipeline {
             key.particle_layout_min_binding_size.get(),
             key.property_layout_min_binding_size
                 .map(|sz| sz.get())
-                .unwrap_or(0),
+                .unwrap_or(0)
         );
 
-        let mut entries = Vec::with_capacity(3);
+        let mut entries = Vec::with_capacity(4);
         // (1,0) ParticleBuffer
         entries.push(BindGroupLayoutEntry {
             binding: 0,
@@ -692,7 +702,6 @@ impl SpecializedComputePipeline for ParticlesInitPipeline {
                 count: None,
             });
         }
-
         let label = "hanabi:init_particles_buffer_layout";
         trace!(
             "Creating particle bind group layout '{}' for init pass with {} entries.",
@@ -718,11 +727,182 @@ impl SpecializedComputePipeline for ParticlesInitPipeline {
 }
 
 #[derive(Resource)]
+pub(crate) struct ParticlesUtilityPipeline {
+    _render_device: RenderDevice,
+    export_buffer_layout: BindGroupLayout,
+}
+
+impl FromWorld for ParticlesUtilityPipeline {
+    fn from_world(world: &mut World) -> Self {
+        let render_device = world.get_resource::<RenderDevice>().unwrap();
+
+        let export_buffer_layout = ExportBuffer::export_bind_group_layout(&render_device);
+        Self {
+            _render_device: render_device.clone(),
+            export_buffer_layout,
+        }
+    }
+}
+
+#[derive(Default, Clone, Hash, PartialEq, Eq)]
+pub(crate) struct ParticleUtilityPipelineKey {
+    shader: Handle<Shader>,
+}
+
+impl SpecializedComputePipeline for ParticlesUtilityPipeline {
+    type Key = ParticleUtilityPipelineKey;
+
+    fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
+        ComputePipelineDescriptor {
+            label: Some("hanabi: pipeline_utility_particles".into()),
+            layout: vec![self.export_buffer_layout.clone()],
+            shader: key.shader,
+            shader_defs: vec![],
+            entry_point: "main".into(),
+            push_constant_ranges: Vec::new(),
+        }
+    }
+}
+
+#[derive(Resource)]
+pub(crate) struct ParticlesExportPipeline {
+    render_device: RenderDevice,
+    render_indirect_layout: BindGroupLayout,
+    export_buffer_layout: BindGroupLayout,
+}
+
+impl FromWorld for ParticlesExportPipeline {
+    fn from_world(world: &mut World) -> Self {
+        let render_device = world.get_resource::<RenderDevice>().unwrap();
+        let storage_alignment = render_device.limits().min_storage_buffer_offset_alignment;
+        let render_effect_indirect_size = GpuRenderEffectMetadata::aligned_size(storage_alignment);
+        let render_group_indirect_size = GpuRenderGroupIndirect::aligned_size(storage_alignment);
+        let render_indirect_layout = render_device.create_bind_group_layout(
+            "hanabi:update_render_indirect_layout",
+            &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(render_effect_indirect_size),
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        // Array; needs padded size
+                        min_binding_size: Some(render_group_indirect_size),
+                    },
+                    count: None,
+                },
+            ],
+        );
+
+        let export_buffer_layout = ExportBuffer::export_bind_group_layout(&render_device);
+
+        Self {
+            render_device: render_device.clone(),
+            render_indirect_layout,
+            export_buffer_layout,
+        }
+    }
+}
+
+impl SpecializedComputePipeline for ParticlesExportPipeline {
+    type Key = ParticleUpdatePipelineKey;
+
+    fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
+        let particle_group_size = GpuParticleGroup::aligned_size(
+            self.render_device
+                .limits()
+                .min_storage_buffer_offset_alignment,
+        );
+        let mut entries = vec![
+            // @binding(0) var<storage, read_write> particle_buffer : ParticleBuffer
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(key.particle_layout.min_binding_size()),
+                },
+                count: None,
+            },
+            // @binding(1) var<storage, read_write> indirect_buffer : IndirectBuffer
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: BufferSize::new(INDIRECT_INDEX_SIZE as _),
+                },
+                count: None,
+            },
+            // @binding(2) var<storage, read> particle_groups : array<ParticleGroup>
+            BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(particle_group_size),
+                },
+                count: None,
+            }, //TODO add the buffer to export here
+        ];
+        if !key.property_layout.is_empty() {
+            // @binding(3) var<storage, read> properties : Properties
+            entries.push(BindGroupLayoutEntry {
+                binding: 3,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false, // TODO
+                    min_binding_size: Some(key.property_layout.min_binding_size()),
+                },
+                count: None,
+            });
+        }
+
+        let label = "hanabi:update_particles_buffer_layout";
+        trace!(
+            "Creating particle bind group layout '{}' for update pass with {} entries.",
+            label,
+            entries.len()
+        );
+        let update_particles_buffer_layout =
+            self.render_device.create_bind_group_layout(label, &entries);
+
+        ComputePipelineDescriptor {
+            label: Some("hanabi:pipeline_update_compute".into()),
+            layout: vec![
+                self.export_buffer_layout.clone(),
+                update_particles_buffer_layout,
+                self.render_indirect_layout.clone(),
+            ],
+            shader: key.shader,
+            shader_defs: vec!["REM_MAX_SPAWN_ATOMIC".into()],
+            entry_point: "main".into(),
+            push_constant_ranges: Vec::new(),
+        }
+    }
+}
+
+#[derive(Resource)]
 pub(crate) struct ParticlesUpdatePipeline {
     render_device: RenderDevice,
     sim_params_layout: BindGroupLayout,
     spawner_buffer_layout: BindGroupLayout,
     render_indirect_layout: BindGroupLayout,
+    export_buffer_layout: BindGroupLayout,
 }
 
 impl FromWorld for ParticlesUpdatePipeline {
@@ -732,8 +912,12 @@ impl FromWorld for ParticlesUpdatePipeline {
         let limits = render_device.limits();
         bevy::log::info!(
             "GPU limits:\n- max_compute_invocations_per_workgroup={}\n- max_compute_workgroup_size_x={}\n- max_compute_workgroup_size_y={}\n- max_compute_workgroup_size_z={}\n- max_compute_workgroups_per_dimension={}\n- min_storage_buffer_offset_alignment={}",
-            limits.max_compute_invocations_per_workgroup, limits.max_compute_workgroup_size_x, limits.max_compute_workgroup_size_y, limits.max_compute_workgroup_size_z,
-            limits.max_compute_workgroups_per_dimension, limits.min_storage_buffer_offset_alignment
+            limits.max_compute_invocations_per_workgroup,
+            limits.max_compute_workgroup_size_x,
+            limits.max_compute_workgroup_size_y,
+            limits.max_compute_workgroup_size_z,
+            limits.max_compute_workgroups_per_dimension,
+            limits.min_storage_buffer_offset_alignment
         );
 
         trace!("GpuSimParams: min_size={}", GpuSimParams::min_size());
@@ -772,11 +956,13 @@ impl FromWorld for ParticlesUpdatePipeline {
         let storage_alignment = render_device.limits().min_storage_buffer_offset_alignment;
         let render_effect_indirect_size = GpuRenderEffectMetadata::aligned_size(storage_alignment);
         let render_group_indirect_size = GpuRenderGroupIndirect::aligned_size(storage_alignment);
-        trace!("GpuRenderEffectMetadata: min_size={} padded_size={} | GpuRenderGroupIndirect: min_size={} padded_size={}",
+        trace!(
+            "GpuRenderEffectMetadata: min_size={} padded_size={} | GpuRenderGroupIndirect: min_size={} padded_size={}",
             GpuRenderEffectMetadata::min_size(),
             render_effect_indirect_size.get(),
             GpuRenderGroupIndirect::min_size(),
-            render_group_indirect_size.get());
+            render_group_indirect_size.get()
+        );
         let render_indirect_layout = render_device.create_bind_group_layout(
             "hanabi:update_render_indirect_layout",
             &[
@@ -804,11 +990,14 @@ impl FromWorld for ParticlesUpdatePipeline {
             ],
         );
 
+        let export_buffer_layout = ExportBuffer::export_bind_group_layout(&render_device);
+
         Self {
             render_device: render_device.clone(),
             sim_params_layout,
             spawner_buffer_layout,
             render_indirect_layout,
+            export_buffer_layout,
         }
     }
 }
@@ -834,7 +1023,7 @@ impl SpecializedComputePipeline for ParticlesUpdatePipeline {
                 0
             } else {
                 key.property_layout.min_binding_size().get()
-            },
+            }
         );
 
         let particle_group_size = GpuParticleGroup::aligned_size(
@@ -875,7 +1064,7 @@ impl SpecializedComputePipeline for ParticlesUpdatePipeline {
                     min_binding_size: Some(particle_group_size),
                 },
                 count: None,
-            },
+            }, //TODO add the buffer to export here
         ];
         if !key.property_layout.is_empty() {
             // @binding(3) var<storage, read> properties : Properties
@@ -907,6 +1096,7 @@ impl SpecializedComputePipeline for ParticlesUpdatePipeline {
                 update_particles_buffer_layout,
                 self.spawner_buffer_layout.clone(),
                 self.render_indirect_layout.clone(),
+                self.export_buffer_layout.clone(),
             ],
             shader: key.shader,
             shader_defs: vec!["REM_MAX_SPAWN_ATOMIC".into()],
@@ -1016,7 +1206,7 @@ impl FromWorld for ParticlesRenderPipeline {
         }
     }
 }
-
+#[allow(dead_code)]
 #[cfg(all(feature = "2d", feature = "3d"))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum PipelineMode {
@@ -1100,25 +1290,24 @@ impl SpecializedRenderPipeline for ParticlesRenderPipeline {
                     format: VertexFormat::Float32x2,
                     offset: 12,
                     shader_location: 1,
-                },
-                //  @location(1) vertex_color: u32
-                // VertexAttribute {
-                //     format: VertexFormat::Uint32,
-                //     offset: 12,
-                //     shader_location: 1,
-                // },
-                //  @location(2) vertex_velocity: vec3<f32>
-                // VertexAttribute {
-                //     format: VertexFormat::Float32x3,
-                //     offset: 12,
-                //     shader_location: 1,
-                // },
-                //  @location(3) vertex_uv: vec2<f32>
-                // VertexAttribute {
-                //     format: VertexFormat::Float32x2,
-                //     offset: 28,
-                //     shader_location: 3,
-                // },
+                }, //  @location(1) vertex_color: u32
+                   // VertexAttribute {
+                   //     format: VertexFormat::Uint32,
+                   //     offset: 12,
+                   //     shader_location: 1,
+                   // },
+                   //  @location(2) vertex_velocity: vec3<f32>
+                   // VertexAttribute {
+                   //     format: VertexFormat::Float32x3,
+                   //     offset: 12,
+                   //     shader_location: 1,
+                   // },
+                   //  @location(3) vertex_uv: vec2<f32>
+                   // VertexAttribute {
+                   //     format: VertexFormat::Float32x2,
+                   //     offset: 28,
+                   //     shader_location: 3,
+                   // },
             ],
         };
 
@@ -1364,10 +1553,8 @@ pub(crate) struct ExtractedEffect {
     pub alpha_mode: AlphaMode,
     /// Effect shader.
     pub effect_shader: EffectShader,
-    /// For 2D rendering, the Z coordinate used as the sort key. Ignored for 3D
-    /// rendering.
-    #[cfg(feature = "2d")]
-    pub z_sort_key_2d: FloatOrd,
+    //#[cfg(feature = "2d")]
+    //pub z_sort_key_2d: FloatOrd,
 }
 
 /// Extracted data for newly-added [`ParticleEffect`] component requiring a new
@@ -1390,6 +1577,11 @@ pub struct AddedEffect {
     pub layout_flags: LayoutFlags,
     /// Handle of the effect asset.
     pub handle: Handle<EffectAsset>,
+    pub export_token: EffectAssetCounterToken,
+}
+#[derive(Default)]
+pub struct UtilityData {
+    pub utility_shader: Option<Handle<Shader>>,
 }
 
 /// Collection of all extracted effects for this frame, inserted into the
@@ -1407,6 +1599,8 @@ pub(crate) struct ExtractedEffects {
     pub removed_effect_entities: Vec<Entity>,
     /// Newly added effects without a GPU allocation yet.
     pub added_effects: Vec<AddedEffect>,
+
+    pub utility: UtilityData,
 }
 
 #[derive(Default, Resource)]
@@ -1439,12 +1633,14 @@ pub(crate) fn extract_effect_events(
 /// This system runs in parallel of [`extract_effect_events`].
 ///
 /// [`ParticleEffect`]: crate::ParticleEffect
+#[allow(warnings)]
 pub(crate) fn extract_effects(
     real_time: Extract<Res<Time<Real>>>,
     virtual_time: Extract<Res<Time<Virtual>>>,
     time: Extract<Res<Time<EffectSimulation>>>,
     effects: Extract<Res<Assets<EffectAsset>>>,
     _images: Extract<Res<Assets<Image>>>,
+    shader_cache: Extract<Res<ShaderCache>>,
     mut query: Extract<
         ParamSet<(
             // All existing ParticleEffect components
@@ -1469,7 +1665,9 @@ pub(crate) fn extract_effects(
     mut extracted_effects: ResMut<ExtractedEffects>,
 ) {
     trace!("extract_effects");
-
+    if extracted_effects.utility.utility_shader.is_none() {
+        extracted_effects.utility.utility_shader = shader_cache.get_utility_shader();
+    }
     // Save simulation params into render world
     sim_params.time = time.elapsed_seconds_f64();
     sim_params.delta_time = time.delta_seconds();
@@ -1509,7 +1707,15 @@ pub(crate) fn extract_effects(
             );
             let property_layout = asset.property_layout();
 
-            trace!("Found new effect: entity {:?} | capacities {:?} | particle_layout {:?} | property_layout {:?} | layout_flags {:?}", entity, asset.capacities(), particle_layout, property_layout, effect.layout_flags);
+            trace!(
+                "Found new effect: entity {:?} | capacities {:?} | particle_layout {:?} | property_layout {:?} | layout_flags {:?}",
+                entity,
+                asset.capacities(),
+                particle_layout,
+                property_layout,
+                effect.layout_flags
+            );
+            println!("added_effect {}", effect.export_token.index);
             Some(AddedEffect {
                 entity,
                 capacities: asset.capacities().to_vec(),
@@ -1517,6 +1723,7 @@ pub(crate) fn extract_effects(
                 property_layout,
                 layout_flags: effect.layout_flags,
                 handle,
+                export_token: effect.export_token,
             })
         })
         .collect();
@@ -1557,8 +1764,8 @@ pub(crate) fn extract_effects(
             continue;
         };
 
-        #[cfg(feature = "2d")]
-        let z_sort_key_2d = effect.z_layer_2d;
+        //#[cfg(feature = "2d")]
+        //let z_sort_key_2d = effect.z_layer_2d;
 
         let property_layout = asset.property_layout();
         let texture_layout = asset.module().texture_layout();
@@ -1587,7 +1794,7 @@ pub(crate) fn extract_effects(
             entity,
             texture_layout.layout.len(),
             effect.textures.len(),
-            layout_flags,
+            layout_flags
         );
 
         extracted_effects.effects.insert(
@@ -1606,8 +1813,7 @@ pub(crate) fn extract_effects(
                 textures: effect.textures.clone(),
                 alpha_mode,
                 effect_shader,
-                #[cfg(feature = "2d")]
-                z_sort_key_2d,
+                //#[cfg(feature = "2d")] z_sort_key_2d,
             },
         );
     }
@@ -1702,7 +1908,7 @@ impl GpuLimits {
 
     /// Byte alignment for [`GpuRenderEffectMetadata`].
     pub fn render_effect_indirect_offset(&self, buffer_index: u32) -> u64 {
-        self.render_effect_indirect_aligned_size.get() as u64 * buffer_index as u64
+        (self.render_effect_indirect_aligned_size.get() as u64) * (buffer_index as u64)
     }
     pub fn render_effect_indirect_size(&self) -> NonZeroU64 {
         NonZeroU64::new(self.render_effect_indirect_aligned_size.get() as u64).unwrap()
@@ -1710,7 +1916,7 @@ impl GpuLimits {
 
     /// Byte alignment for [`GpuRenderGroupIndirect`].
     pub fn render_group_indirect_offset(&self, buffer_index: u32) -> u64 {
-        self.render_group_indirect_aligned_size.get() as u64 * buffer_index as u64
+        (self.render_group_indirect_aligned_size.get() as u64) * (buffer_index as u64)
     }
     pub fn render_group_indirect_size(&self) -> NonZeroU64 {
         NonZeroU64::new(self.render_group_indirect_aligned_size.get() as u64).unwrap()
@@ -1893,7 +2099,7 @@ impl EffectsMeta {
                         .dispatch_buffer_indices
                         .first_update_group_dispatch_buffer_index
                         .0;
-                    for table_id in first_row..(first_row + group_count) {
+                    for table_id in first_row..first_row + group_count {
                         self.dispatch_indirect_buffer
                             .remove(BufferTableId(table_id));
                     }
@@ -1906,7 +2112,7 @@ impl EffectsMeta {
                         .dispatch_buffer_indices
                         .first_render_group_dispatch_buffer_index
                         .0;
-                    for table_id in first_row..(first_row + group_count) {
+                    for table_id in first_row..first_row + group_count {
                         self.render_group_dispatch_buffer
                             .remove(BufferTableId(table_id));
                     }
@@ -1964,6 +2170,7 @@ impl EffectsMeta {
                 &added_effect.property_layout,
                 added_effect.layout_flags,
                 dispatch_buffer_indices,
+                added_effect.export_token,
             );
 
             let entity = added_effect.entity;
@@ -2054,32 +2261,20 @@ impl Default for LayoutFlags {
     }
 }
 
-pub(crate) fn prepare_effects(
-    mut commands: Commands,
-    sim_params: Res<SimParams>,
+pub(crate) fn prepare_effects_add_remove(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     pipeline_cache: Res<PipelineCache>,
     dispatch_indirect_pipeline: Res<DispatchIndirectPipeline>,
-    init_pipeline: Res<ParticlesInitPipeline>,
-    update_pipeline: Res<ParticlesUpdatePipeline>,
-    mut specialized_init_pipelines: ResMut<SpecializedComputePipelines<ParticlesInitPipeline>>,
-    mut specialized_update_pipelines: ResMut<SpecializedComputePipelines<ParticlesUpdatePipeline>>,
-    // update_pipeline: Res<ParticlesUpdatePipeline>, // TODO move update_pipeline.pipeline to
-    // EffectsMeta
-    mut effects_meta: ResMut<EffectsMeta>,
     mut effect_cache: ResMut<EffectCache>,
     mut extracted_effects: ResMut<ExtractedEffects>,
+    utility_pipeline: Res<ParticlesUtilityPipeline>,
+    mut specialized_utility_pipelines: ResMut<
+        SpecializedComputePipelines<ParticlesUtilityPipeline>,
+    >,
+    mut effects_meta: ResMut<EffectsMeta>,
     mut effect_bind_groups: ResMut<EffectBindGroups>,
 ) {
-    trace!("prepare_effects");
-
-    // Allocate spawner buffer if needed
-    // if effects_meta.spawner_buffer.is_empty() {
-    //    effects_meta.spawner_buffer.push(GpuSpawnerParams::default());
-    //}
-
-    // Write vertices (TODO - lazily once only)
     effects_meta
         .vertices
         .write_buffer(&render_device, &render_queue);
@@ -2097,7 +2292,6 @@ pub(crate) fn prepare_effects(
     effects_meta
         .render_group_dispatch_buffer
         .clear_previous_frame_resizes();
-
     // Allocate new effects, deallocate removed ones
     let removed_effect_entities = std::mem::take(&mut extracted_effects.removed_effect_entities);
     for entity in &removed_effect_entities {
@@ -2112,6 +2306,42 @@ pub(crate) fn prepare_effects(
         &mut effect_cache,
     );
 
+    if effect_cache.utility_pipeline_id.is_none() {
+        let utility_pipeline_id = specialized_utility_pipelines.specialize(
+            &pipeline_cache,
+            &utility_pipeline,
+            ParticleUtilityPipelineKey {
+                shader: extracted_effects.utility.utility_shader.clone().unwrap(),
+            },
+        );
+        effect_cache.utility_pipeline_id = Some(utility_pipeline_id);
+    }
+}
+
+pub(crate) fn prepare_effects(
+    mut commands: Commands,
+    sim_params: Res<SimParams>,
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+    pipeline_cache: Res<PipelineCache>,
+    init_pipeline: Res<ParticlesInitPipeline>,
+    update_pipeline: Res<ParticlesUpdatePipeline>,
+    export_pipeline: Res<ParticlesExportPipeline>,
+    mut specialized_init_pipelines: ResMut<SpecializedComputePipelines<ParticlesInitPipeline>>,
+    mut specialized_update_pipelines: ResMut<SpecializedComputePipelines<ParticlesUpdatePipeline>>,
+    mut specialized_export_pipelines: ResMut<SpecializedComputePipelines<ParticlesExportPipeline>>,
+    // update_pipeline: Res<ParticlesUpdatePipeline>, // TODO move update_pipeline.pipeline to
+    // EffectsMeta
+    mut effects_meta: ResMut<EffectsMeta>,
+    effect_cache: ResMut<EffectCache>,
+    mut extracted_effects: ResMut<ExtractedEffects>,
+) {
+    trace!("prepare_effects");
+    // Allocate spawner buffer if needed
+    // if effects_meta.spawner_buffer.is_empty() {
+    //    effects_meta.spawner_buffer.push(GpuSpawnerParams::default());
+    //}
+    // Write vertices (TODO - lazily once only)
     // // sort first by z and then by handle. this ensures that, when possible,
     // batches span multiple z layers // batches won't span z-layers if there is
     // another batch between them extracted_effects.effects.sort_by(|a, b| {
@@ -2146,8 +2376,8 @@ pub(crate) fn prepare_effects(
                 inverse_transform: extracted_effect.inverse_transform.into(),
                 property_buffer,
                 property_data: extracted_effect.property_data,
-                #[cfg(feature = "2d")]
-                z_sort_key_2d: extracted_effect.z_sort_key_2d,
+                //#[cfg(feature = "2d")]
+                //z_sort_key_2d: extracted_effect.z_sort_key_2d,
             }
         })
         .collect::<Vec<_>>();
@@ -2160,7 +2390,6 @@ pub(crate) fn prepare_effects(
     // the previous start end, without gap). EffectSlice already contains both
     // information, and the proper ordering implementation.
     // effect_entity_list.sort_by_key(|a| a.effect_slice.clone());
-
     // Loop on all extracted effects in order and try to batch them together to
     // reduce draw calls
     effects_meta.spawner_buffer.clear();
@@ -2197,7 +2426,7 @@ pub(crate) fn prepare_effects(
             "Specializing update pipeline(s): update_shader(s)={:?} particle_layout={:?} property_layout={:?}",
             input.effect_shader.update,
             input.effect_slices.particle_layout,
-            input.property_layout,
+            input.property_layout
         );
         let update_pipeline_ids: Vec<_> = input
             .effect_shader
@@ -2220,6 +2449,27 @@ pub(crate) fn prepare_effects(
             update_pipeline_ids
         );
 
+        let export_pipeline_ids: Vec<_> = input
+            .effect_shader
+            .export
+            .iter()
+            .map(|export_source| {
+                specialized_export_pipelines.specialize(
+                    &pipeline_cache,
+                    &export_pipeline,
+                    ParticleUpdatePipelineKey {
+                        shader: export_source.clone(),
+                        particle_layout: input.effect_slices.particle_layout.clone(),
+                        property_layout: input.property_layout.clone(),
+                    },
+                )
+            })
+            .collect();
+        trace!(
+            "Export pipeline(s) specialized: ids={:?}",
+            export_pipeline_ids
+        );
+
         let init_shader = input.effect_shader.init.clone();
         trace!("init_shader = {:?}", init_shader);
 
@@ -2237,10 +2487,10 @@ pub(crate) fn prepare_effects(
             input.effect_slices.particle_layout
         );
 
-        #[cfg(feature = "2d")]
-        {
-            trace!("z_sort_key_2d = {:?}", input.z_sort_key_2d);
-        }
+        // #[cfg(feature = "2d")]
+        // {
+        //     trace!("z_sort_key_2d = {:?}", input.z_sort_key_2d);
+        // }
 
         // This callback is raised when creating a new batch from a single item, so the
         // base index for spawners is the current buffer size. Per-effect spawner values
@@ -2284,6 +2534,7 @@ pub(crate) fn prepare_effects(
 
         let effect_cache_id = effects_meta.entity_map.get(&input.entity).unwrap().cache_id;
         let dispatch_buffer_indices = effect_cache.get_dispatch_buffer_indices(effect_cache_id);
+        let export_index = effect_cache.get_export_index(effect_cache_id);
 
         // Write properties for this effect if they were modified.
         // FIXME - This doesn't work with batching!
@@ -2297,8 +2548,8 @@ pub(crate) fn prepare_effects(
             }
         }
 
-        #[cfg(feature = "2d")]
-        let z_sort_key_2d = input.z_sort_key_2d;
+        //#[cfg(feature = "2d")]
+        //let z_sort_key_2d = input.z_sort_key_2d;
 
         #[cfg(feature = "3d")]
         let translation_3d = input.transform.translation();
@@ -2312,8 +2563,10 @@ pub(crate) fn prepare_effects(
             effect_cache_id,
             init_pipeline_id,
             update_pipeline_ids,
+            export_pipeline_ids,
             dispatch_buffer_indices,
             first_particle_group_buffer_index.unwrap_or_default(),
+            export_index,
         );
         let batches_entity = commands.spawn(batches).id();
 
@@ -2324,8 +2577,7 @@ pub(crate) fn prepare_effects(
             commands.spawn(EffectDrawBatch {
                 batches_entity,
                 group_index,
-                #[cfg(feature = "2d")]
-                z_sort_key_2d,
+                //#[cfg(feature = "2d")] z_sort_key_2d,
                 #[cfg(feature = "3d")]
                 translation_3d,
             });
@@ -2365,7 +2617,7 @@ pub(crate) fn prepare_effects(
             gpu_sim_params.virtual_delta_time,
             gpu_sim_params.real_time,
             gpu_sim_params.real_delta_time,
-            gpu_sim_params.num_groups,
+            gpu_sim_params.num_groups
         );
     }
     // FIXME - There's no simple way to tell if write_buffer() reallocates...
@@ -2454,8 +2706,8 @@ impl EffectBindGroups {
 
 #[derive(SystemParam)]
 pub struct QueueEffectsReadOnlyParams<'w, 's> {
-    #[cfg(feature = "2d")]
-    draw_functions_2d: Res<'w, DrawFunctions<Transparent2d>>,
+    // #[cfg(feature = "2d")]
+    // draw_functions_2d: Res<'w, DrawFunctions<Transparent2d>>,
     #[cfg(feature = "3d")]
     draw_functions_3d: Res<'w, DrawFunctions<Transparent3d>>,
     #[cfg(feature = "3d")]
@@ -2491,7 +2743,7 @@ fn emit_sorted_draw<T, F>(
 
         {
             #[cfg(feature = "trace")]
-            let _span = bevy::utils::tracing::info_span!("collect_view_entities").entered();
+            let _span = bevy::utils::tracing::info_span("collect_view_entities").entered();
 
             view_entities.clear();
             view_entities.extend(
@@ -2506,13 +2758,13 @@ fn emit_sorted_draw<T, F>(
         // batch if so.
         for (draw_entity, draw_batch) in effect_draw_batches.iter() {
             #[cfg(feature = "trace")]
-            let _span_draw = bevy::utils::tracing::info_span!("draw_batch").entered();
+            let _span_draw = bevy::utils::tracing::info_span("draw_batch").entered();
 
             trace!(
                 "Process draw batch: draw_entity={:?} group_index={} batches_entity={:?}",
                 draw_entity,
                 draw_batch.group_index,
-                draw_batch.batches_entity,
+                draw_batch.batches_entity
             );
 
             // Get the EffectBatches this EffectDrawBatch is part of.
@@ -2526,7 +2778,7 @@ fn emit_sorted_draw<T, F>(
                 batches_entity,
                 batches.buffer_index,
                 batches.spawner_base,
-                batches.layout_flags,
+                batches.layout_flags
             );
 
             // AlphaMask is a binned draw, so no sorted draw can possibly use it
@@ -2541,7 +2793,7 @@ fn emit_sorted_draw<T, F>(
             // cost of a FixedBitSet for the sake of an arguable speed-up.
             // TODO - Profile to confirm.
             #[cfg(feature = "trace")]
-            let _span_check_vis = bevy::utils::tracing::info_span!("check_visibility").entered();
+            let _span_check_vis = bevy::utils::tracing::info_span("check_visibility").entered();
             let has_visible_entity = batches
                 .entities
                 .iter()
@@ -2578,14 +2830,18 @@ fn emit_sorted_draw<T, F>(
             );
 
             // Add a draw pass for the effect batch
-            trace!("Emitting individual draws for batches and groups: group_batches.len()={} batches.render_shaders.len()={}", batches.group_batches.len(), batches.render_shaders.len());
+            trace!(
+                "Emitting individual draws for batches and groups: group_batches.len()={} batches.render_shaders.len()={}",
+                batches.group_batches.len(),
+                batches.render_shaders.len()
+            );
             let render_shader_source = &batches.render_shaders[draw_batch.group_index as usize];
             trace!("Emit for group index #{}", draw_batch.group_index);
 
             let alpha_mode = batches.alpha_mode;
 
             #[cfg(feature = "trace")]
-            let _span_specialize = bevy::utils::tracing::info_span!("specialize").entered();
+            let _span_specialize = bevy::utils::tracing::info_span("specialize").entered();
             let render_pipeline_id = specialized_render_pipelines.specialize(
                 pipeline_cache,
                 render_pipeline,
@@ -2829,25 +3085,25 @@ pub(crate) fn queue_effects(
     >,
 ) {
     #[cfg(feature = "trace")]
-    let _span = bevy::utils::tracing::info_span!("hanabi:queue_effects").entered();
+    let _span = bevy::utils::tracing::info_span("hanabi:queue_effects").entered();
 
     trace!("queue_effects");
 
     // If an image has changed, the GpuImage has (probably) changed
     for event in &events.images {
         match event {
-            AssetEvent::Added { .. } => None,
-            AssetEvent::LoadedWithDependencies { .. } => None,
-            AssetEvent::Unused { .. } => None,
+            AssetEvent::Added { .. } => {}
+            AssetEvent::LoadedWithDependencies { .. } => {}
+            AssetEvent::Unused { .. } => {}
             AssetEvent::Modified { id } => {
                 trace!("Destroy bind group of modified image asset {:?}", id);
-                effect_bind_groups.images.remove(id)
+                effect_bind_groups.images.remove(id);
             }
             AssetEvent::Removed { id } => {
                 trace!("Destroy bind group of removed image asset {:?}", id);
-                effect_bind_groups.images.remove(id)
+                effect_bind_groups.images.remove(id);
             }
-        };
+        }
     }
 
     if effects_meta.spawner_buffer.buffer().is_none() || effects_meta.spawner_buffer.is_empty() {
@@ -2859,46 +3115,45 @@ pub(crate) fn queue_effects(
     #[cfg(feature = "2d")]
     {
         #[cfg(feature = "trace")]
-        let _span_draw = bevy::utils::tracing::info_span!("draw_2d").entered();
+        let _span_draw = bevy::utils::tracing::info_span("draw_2d").entered();
 
-        let draw_effects_function_2d = read_params
-            .draw_functions_2d
-            .read()
-            .get_id::<DrawEffects>()
-            .unwrap();
+        // let draw_effects_function_2d = read_params.draw_functions_2d
+        //     .read()
+        //     .get_id::<DrawEffects>()
+        //     .unwrap();
 
         // Effects with full alpha blending
-        if !views.is_empty() {
-            trace!("Emit effect draw calls for alpha blended 2D views...");
-            emit_sorted_draw(
-                &views,
-                &mut transparent_2d_render_phases,
-                &mut view_entities,
-                &effect_batches,
-                &effect_draw_batches,
-                &mut render_pipeline,
-                specialized_render_pipelines.reborrow(),
-                &pipeline_cache,
-                msaa.samples(),
-                |id, entity, draw_batch, _group, _view| Transparent2d {
-                    draw_function: draw_effects_function_2d,
-                    pipeline: id,
-                    entity,
-                    sort_key: draw_batch.z_sort_key_2d,
-                    batch_range: 0..1,
-                    extra_index: PhaseItemExtraIndex::NONE,
-                },
-                #[cfg(feature = "3d")]
-                PipelineMode::Camera2d,
-            );
-        }
+        // if !views.is_empty() {
+        //     trace!("Emit effect draw calls for alpha blended 2D views...");
+        //     emit_sorted_draw(
+        //         &views,
+        //         &mut transparent_2d_render_phases,
+        //         &mut view_entities,
+        //         &effect_batches,
+        //         &effect_draw_batches,
+        //         &mut render_pipeline,
+        //         specialized_render_pipelines.reborrow(),
+        //         &pipeline_cache,
+        //         msaa.samples(),
+        //         |id, entity, draw_batch, _group, _view| Transparent2d {
+        //             draw_function: draw_effects_function_2d,
+        //             pipeline: id,
+        //             entity,
+        //             sort_key: draw_batch.z_sort_key_2d,
+        //             batch_range: 0..1,
+        //             extra_index: PhaseItemExtraIndex::NONE,
+        //         },
+        //         #[cfg(feature = "3d")]
+        //         PipelineMode::Camera2d,
+        //     );
+        // }
     }
 
     // Loop over all 3D cameras/views that need to render effects
     #[cfg(feature = "3d")]
     {
         #[cfg(feature = "trace")]
-        let _span_draw = bevy::utils::tracing::info_span!("draw_3d").entered();
+        let _span_draw = bevy::utils::tracing::info_span("draw_3d").entered();
 
         // Effects with full alpha blending
         if !views.is_empty() {
@@ -2938,7 +3193,7 @@ pub(crate) fn queue_effects(
         // Effects with alpha mask
         if !views.is_empty() {
             #[cfg(feature = "trace")]
-            let _span_draw = bevy::utils::tracing::info_span!("draw_alphamask").entered();
+            let _span_draw = bevy::utils::tracing::info_span("draw_alphamask").entered();
 
             trace!("Emit effect draw calls for alpha masked 3D views...");
 
@@ -3030,14 +3285,15 @@ pub(crate) fn prepare_bind_groups(
 
     {
         #[cfg(feature = "trace")]
-        let _span = bevy::utils::tracing::info_span!("shared_bind_groups").entered();
+        let _span = bevy::utils::tracing::info_span("shared_bind_groups").entered();
 
         // Create the bind group for the global simulation parameters
         if effects_meta.sim_params_bind_group.is_none() {
             effects_meta.sim_params_bind_group = Some(render_device.create_bind_group(
                 "hanabi:bind_group_sim_params",
-                &update_pipeline.sim_params_layout, /* FIXME - Shared with vfx_update, is
-                                                     * that OK? */
+                &update_pipeline.sim_params_layout,
+                /* FIXME - Shared with vfx_update, is
+                 * that OK? */
                 &[BindGroupEntry {
                     binding: 0,
                     resource: effects_meta.sim_params_uniforms.binding().unwrap(),
@@ -3055,7 +3311,7 @@ pub(crate) fn prepare_bind_groups(
         );
         assert!(
             effects_meta.spawner_buffer.aligned_size()
-                >= GpuSpawnerParams::min_size().get() as usize
+                >= (GpuSpawnerParams::min_size().get() as usize)
         );
         // Note: we clear effects_meta.spawner_buffer each frame in prepare_effects(),
         // so this bind group is always invalid at the minute and always needs
@@ -3155,7 +3411,7 @@ pub(crate) fn prepare_bind_groups(
     trace!("Create per-effect render bind groups...");
     for (buffer_index, buffer) in effect_cache.buffers().iter().enumerate() {
         #[cfg(feature = "trace")]
-        let _span_buffer = bevy::utils::tracing::info_span!("create_buffer_bind_groups").entered();
+        let _span_buffer = bevy::utils::tracing::info_span("create_buffer_bind_groups").entered();
 
         let Some(buffer) = buffer else {
             trace!(
@@ -3169,65 +3425,66 @@ pub(crate) fn prepare_bind_groups(
         // group, since the update phase runs on an entire group/buffer at once,
         // with all the effect instances in it batched together.
         trace!("effect particle buffer_index=#{}", buffer_index);
-        effect_bind_groups
-            .particle_buffers
-            .entry(buffer_index as u32)
-            .or_insert_with(|| {
-                trace!(
-                    "Create new particle bind groups for buffer_index={} | particle_layout {:?} | property_layout {:?}",
-                    buffer_index,
-                    buffer.particle_layout(),
-                    buffer.property_layout(),
-                );
+        effect_bind_groups.particle_buffers.entry(buffer_index as u32).or_insert_with(|| {
+            trace!(
+                "Create new particle bind groups for buffer_index={} | particle_layout {:?} | property_layout {:?}",
+                buffer_index,
+                buffer.particle_layout(),
+                buffer.property_layout()
+            );
 
-                let dispatch_indirect_size = GpuDispatchIndirect::aligned_size(render_device
-                    .limits()
-                    .min_storage_buffer_offset_alignment);
-                let mut entries = vec![
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: buffer.max_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: buffer.indirect_max_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 2,
-                        resource: BindingResource::Buffer(BufferBinding {
-                            buffer: &indirect_buffer,
-                            offset: 0,
-                            size: Some(dispatch_indirect_size),
-                        }),
-                    },
-                ];
-                if buffer.layout_flags().contains(LayoutFlags::LOCAL_SPACE_SIMULATION) {
-                    entries.push(BindGroupEntry {
-                        binding: 3,
-                        resource: BindingResource::Buffer(BufferBinding {
-                            buffer: &spawner_buffer,
-                            offset: 0,
-                            size: Some(GpuSpawnerParams::min_size()),
-                        }),
-                    });
+            let dispatch_indirect_size = GpuDispatchIndirect::aligned_size(
+                render_device.limits().min_storage_buffer_offset_alignment
+            );
+            let mut entries = vec![
+                BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.max_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: buffer.indirect_max_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &indirect_buffer,
+                        offset: 0,
+                        size: Some(dispatch_indirect_size),
+                    }),
                 }
-                trace!("Creating render bind group with {} entries (layout flags: {:?})", entries.len(), buffer.layout_flags());
-                let render = render_device.create_bind_group(
-                    &format!("hanabi:bind_group_render_vfx{buffer_index}_particles")[..],
-                     buffer.particle_layout_bind_group_with_dispatch(),
-                     &entries,
-                );
+            ];
+            if buffer.layout_flags().contains(LayoutFlags::LOCAL_SPACE_SIMULATION) {
+                entries.push(BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &spawner_buffer,
+                        offset: 0,
+                        size: Some(GpuSpawnerParams::min_size()),
+                    }),
+                });
+            }
+            trace!(
+                "Creating render bind group with {} entries (layout flags: {:?})",
+                entries.len(),
+                buffer.layout_flags()
+            );
+            let render = render_device.create_bind_group(
+                &format!("hanabi:bind_group_render_vfx{buffer_index}_particles")[..],
+                buffer.particle_layout_bind_group_with_dispatch(),
+                &entries
+            );
 
-                BufferBindGroups {
-                    render,
-                }
-            });
+            BufferBindGroups {
+                render,
+            }
+        });
     }
 
     // Create the per-effect bind groups.
     for (entity, effect_batches) in effect_batches.iter() {
         #[cfg(feature = "trace")]
-        let _span_buffer = bevy::utils::tracing::info_span!("create_batch_bind_groups").entered();
+        let _span_buffer = bevy::utils::tracing::info_span("create_batch_bind_groups").entered();
 
         let effect_cache_id = effect_batches.effect_cache_id;
 
@@ -3237,8 +3494,8 @@ pub(crate) fn prepare_bind_groups(
             .particle_group_offset(effect_batches.first_particle_group_buffer_index)
             as u64;
         let effect_particle_groups_buffer_size = NonZeroU64::try_from(
-            u32::from(effects_meta.gpu_limits.particle_group_aligned_size) as u64
-                * effect_batches.group_batches.len() as u64,
+            (u32::from(effects_meta.gpu_limits.particle_group_aligned_size) as u64)
+                * (effect_batches.group_batches.len() as u64),
         )
         .unwrap();
         let group_binding = BufferBinding {
@@ -3279,7 +3536,7 @@ pub(crate) fn prepare_bind_groups(
                 GpuRenderEffectMetadata::aligned_size(storage_alignment);
             let total_render_group_indirect_size = NonZeroU64::new(
                 GpuRenderGroupIndirect::aligned_size(storage_alignment).get()
-                    * effect_batches.group_batches.len() as u64,
+                    * (effect_batches.group_batches.len() as u64),
             )
             .unwrap();
             let particles_buffer_layout_update_render_indirect = render_device.create_bind_group(
@@ -3430,8 +3687,8 @@ fn draw<'w>(
     );
     let spawner_base = effect_batches.spawner_base;
     let spawner_buffer_aligned = effects_meta.spawner_buffer.aligned_size();
-    assert!(spawner_buffer_aligned >= GpuSpawnerParams::min_size().get() as usize);
-    let spawner_offset = spawner_base * spawner_buffer_aligned as u32;
+    assert!(spawner_buffer_aligned >= (GpuSpawnerParams::min_size().get() as usize));
+    let spawner_offset = spawner_base * (spawner_buffer_aligned as u32);
     let dyn_uniform_indices: [u32; 2] = [dispatch_indirect_offset, spawner_offset];
     let dyn_uniform_indices = if effect_batches
         .layout_flags
@@ -3462,7 +3719,7 @@ fn draw<'w>(
             // Texture(s) not ready; skip this drawing for now
             trace!(
                 "Particle material bind group not available for batch buf={}. Skipping draw call.",
-                effect_batches.buffer_index,
+                effect_batches.buffer_index
             );
             return; // continue;
         }
@@ -3485,13 +3742,13 @@ fn draw<'w>(
         effects_meta.vertices.len(),
         effect_batches.buffer_index,
         render_group_dispatch_indirect_index,
-        group_index,
+        group_index
     );
 
     pass.draw_indirect(
         render_indirect_buffer,
-        render_group_dispatch_indirect_index as u64
-            * u32::from(gpu_limits.render_group_indirect_aligned_size) as u64,
+        (render_group_dispatch_indirect_index as u64)
+            * (u32::from(gpu_limits.render_group_indirect_aligned_size) as u64),
     );
 }
 
@@ -3597,6 +3854,8 @@ pub(crate) struct VfxSimulateNode {
 }
 
 impl VfxSimulateNode {
+    const _UTILITY_WORKGROUP_SIZE: u32 = 256;
+
     /// Output particle buffer for that view. TODO - how to handle multiple
     /// buffers?! Should use Entity instead??
     // pub const OUT_PARTICLE_BUFFER: &'static str = "particle_buffer";
@@ -3635,7 +3894,6 @@ impl Node for VfxSimulateNode {
         let effects_meta = world.resource::<EffectsMeta>();
         let effect_cache = world.resource::<EffectCache>();
         let effect_bind_groups = world.resource::<EffectBindGroups>();
-        // let render_queue = world.resource::<RenderQueue>();
 
         // Make sure to schedule any buffer copy from changed effects before accessing
         // them
@@ -3652,14 +3910,6 @@ impl Node for VfxSimulateNode {
         // Compute init pass
         // let mut total_group_count = 0;
         {
-            let mut compute_pass =
-                render_context
-                    .command_encoder()
-                    .begin_compute_pass(&ComputePassDescriptor {
-                        label: Some("hanabi:init"),
-                        timestamp_writes: None,
-                    });
-
             {
                 trace!("loop over effect batches...");
 
@@ -3727,8 +3977,10 @@ impl Node for VfxSimulateNode {
                     let spawner_base = batches.spawner_base;
 
                     let spawner_buffer_aligned = effects_meta.spawner_buffer.aligned_size();
-                    assert!(spawner_buffer_aligned >= GpuSpawnerParams::min_size().get() as usize);
-                    let spawner_offset = spawner_base * spawner_buffer_aligned as u32;
+                    assert!(
+                        spawner_buffer_aligned >= (GpuSpawnerParams::min_size().get() as usize)
+                    );
+                    let spawner_offset = spawner_base * (spawner_buffer_aligned as u32);
 
                     let render_effect_indirect_offset = effects_meta
                         .gpu_limits
@@ -3750,9 +4002,14 @@ impl Node for VfxSimulateNode {
                         spawner_base,
                         spawner_offset,
                         render_effect_indirect_offset,
-                        first_render_group_indirect_offset,
+                        first_render_group_indirect_offset
                     );
-
+                    let mut compute_pass = render_context.command_encoder().begin_compute_pass(
+                        &(ComputePassDescriptor {
+                            label: Some("hanabi:init"),
+                            timestamp_writes: None,
+                        }),
+                    );
                     // Setup compute pass
                     compute_pass.set_pipeline(init_pipeline);
                     compute_pass.set_bind_group(
@@ -3782,7 +4039,6 @@ impl Node for VfxSimulateNode {
                 }
             }
         }
-
         // Compute indirect dispatch pass
         if effects_meta.spawner_buffer.buffer().is_some()
             && !effects_meta.spawner_buffer.is_empty()
@@ -3790,13 +4046,12 @@ impl Node for VfxSimulateNode {
             && effects_meta.sim_params_bind_group.is_some()
         {
             // Only if there's an effect
-            let mut compute_pass =
-                render_context
-                    .command_encoder()
-                    .begin_compute_pass(&ComputePassDescriptor {
-                        label: Some("hanabi:indirect_dispatch"),
-                        timestamp_writes: None,
-                    });
+            let mut compute_pass = render_context.command_encoder().begin_compute_pass(
+                &(ComputePassDescriptor {
+                    label: Some("hanabi:indirect_dispatch"),
+                    timestamp_writes: None,
+                }),
+            );
 
             // Dispatch indirect dispatch compute job
             if let Some(indirect_dispatch_pipeline) = &effects_meta.indirect_dispatch_pipeline {
@@ -3833,17 +4088,10 @@ impl Node for VfxSimulateNode {
                 );
             }
         }
-
+        //clear buffer here to allow particle counts to reduce
+        effect_cache.clear_buffer(render_context.command_encoder());
         // Compute update pass
         {
-            let mut compute_pass =
-                render_context
-                    .command_encoder()
-                    .begin_compute_pass(&ComputePassDescriptor {
-                        label: Some("hanabi:update"),
-                        timestamp_writes: None,
-                    });
-
             // Dispatch update compute jobs
             for (entity, batches) in self.effect_query.iter_manual(world) {
                 let effect_cache_id = batches.effect_cache_id;
@@ -3853,7 +4101,8 @@ impl Node for VfxSimulateNode {
                 else {
                     error!(
                         "Failed to find update particle buffer bind group for entity {:?}, effect cache ID {:?}",
-                        entity, effect_cache_id
+                        entity,
+                        effect_cache_id
                     );
                     continue;
                 };
@@ -3865,7 +4114,7 @@ impl Node for VfxSimulateNode {
                 let spawner_base = batches.spawner_base;
 
                 let spawner_buffer_aligned = effects_meta.spawner_buffer.aligned_size();
-                assert!(spawner_buffer_aligned >= GpuSpawnerParams::min_size().get() as usize);
+                assert!(spawner_buffer_aligned >= (GpuSpawnerParams::min_size().get() as usize));
 
                 let Some(update_render_indirect_bind_group) = &effect_bind_groups
                     .update_render_indirect_bind_groups
@@ -3874,17 +4123,23 @@ impl Node for VfxSimulateNode {
                     error!(
                         "Failed to find update render indirect bind group for effect cache ID: {:?}, IDs present: {:?}",
                         effect_cache_id,
-                        effect_bind_groups
-                            .update_render_indirect_bind_groups
+                        effect_bind_groups.update_render_indirect_bind_groups
                             .keys()
                             .collect::<Vec<_>>()
                     );
                     continue;
                 };
-
+                let mut export_index = batches.export_index as u64;
                 for (group_index, update_pipeline_id) in
                     batches.update_pipeline_ids.iter().enumerate()
                 {
+                    effect_cache.update_uniform(render_context.command_encoder(), export_index);
+                    let mut compute_pass = render_context.command_encoder().begin_compute_pass(
+                        &(ComputePassDescriptor {
+                            label: Some("hanabi:update"),
+                            timestamp_writes: None,
+                        }),
+                    );
                     let Some(update_pipeline) =
                         pipeline_cache.get_compute_pipeline(*update_pipeline_id)
                     else {
@@ -3904,7 +4159,7 @@ impl Node for VfxSimulateNode {
 
                     let update_group_dispatch_buffer_offset =
                         effects_meta.gpu_limits.dispatch_indirect_offset(
-                            first_update_group_dispatch_buffer_index.0 + group_index as u32,
+                            first_update_group_dispatch_buffer_index.0 + (group_index as u32),
                         );
 
                     // for (effect_entity, effect_slice) in effects_meta.entity_map.iter() {
@@ -3923,7 +4178,7 @@ impl Node for VfxSimulateNode {
                         spawner_base={} update_group_dispatch_buffer_offset={}…",
                         batches.handle,
                         spawner_base,
-                        update_group_dispatch_buffer_offset,
+                        update_group_dispatch_buffer_offset
                     );
 
                     // Setup compute pass
@@ -3938,15 +4193,16 @@ impl Node for VfxSimulateNode {
                     compute_pass.set_bind_group(
                         2,
                         effects_meta.spawner_bind_group.as_ref().unwrap(),
-                        &[spawner_base * spawner_buffer_aligned as u32],
+                        &[spawner_base * (spawner_buffer_aligned as u32)],
                     );
                     compute_pass.set_bind_group(3, update_render_indirect_bind_group, &[]);
+                    compute_pass.set_bind_group(4, effect_cache.export_bind_group(), &[]);
 
                     if let Some(buffer) = effects_meta.dispatch_indirect_buffer.buffer() {
                         trace!(
                             "dispatch_workgroups_indirect: buffer={:?} offset={}",
                             buffer,
-                            update_group_dispatch_buffer_offset,
+                            update_group_dispatch_buffer_offset
                         );
                         compute_pass.dispatch_workgroups_indirect(
                             buffer,
@@ -3956,6 +4212,134 @@ impl Node for VfxSimulateNode {
                     }
 
                     trace!("update compute dispatched");
+                    export_index += 1;
+                }
+            }
+        }
+
+        //Compute utility pass
+        if let Some(id) = effect_cache.utility_pipeline_id {
+            let mut compute_pass = render_context.command_encoder().begin_compute_pass(
+                &(ComputePassDescriptor {
+                    label: Some("hanabi:utility"),
+                    timestamp_writes: None,
+                }),
+            );
+            let pipeline = pipeline_cache.get_compute_pipeline(id).unwrap();
+            compute_pass.set_pipeline(pipeline);
+            compute_pass.set_bind_group(0, effect_cache.export_bind_group(), &[]);
+            //let workgroup_count = (_count + Self::UTILITY_WORKGROUP_SIZE - 1) / Self::UTILITY_WORKGROUP_SIZE;
+            let workgroup_count = 1;
+            compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
+        }
+        // Compute export pass
+        {
+            // Dispatch export compute jobs
+            for (entity, batches) in self.effect_query.iter_manual(world) {
+                let effect_cache_id = batches.effect_cache_id;
+
+                let Some(particles_update_bind_group) =
+                    effect_cache.update_bind_group(effect_cache_id)
+                else {
+                    error!(
+                        "Failed to find update particle buffer bind group for entity {:?}, effect cache ID {:?}",
+                        entity,
+                        effect_cache_id
+                    );
+                    continue;
+                };
+
+                let first_update_group_dispatch_buffer_index = batches
+                    .dispatch_buffer_indices
+                    .first_update_group_dispatch_buffer_index;
+
+                let spawner_base = batches.spawner_base;
+
+                let spawner_buffer_aligned = effects_meta.spawner_buffer.aligned_size();
+                assert!(spawner_buffer_aligned >= (GpuSpawnerParams::min_size().get() as usize));
+
+                let Some(update_render_indirect_bind_group) = &effect_bind_groups
+                    .update_render_indirect_bind_groups
+                    .get(&effect_cache_id)
+                else {
+                    error!(
+                        "Failed to find update render indirect bind group for effect cache ID: {:?}, IDs present: {:?}",
+                        effect_cache_id,
+                        effect_bind_groups.update_render_indirect_bind_groups
+                            .keys()
+                            .collect::<Vec<_>>()
+                    );
+                    continue;
+                };
+                let mut export_index = batches.export_index as u64;
+                for (group_index, export_pipeline_id) in
+                    batches.export_pipeline_ids.iter().enumerate()
+                {
+                    effect_cache.update_uniform(render_context.command_encoder(), export_index);
+                    let mut compute_pass = render_context.command_encoder().begin_compute_pass(
+                        &(ComputePassDescriptor {
+                            label: Some("hanabi:export"),
+                            timestamp_writes: None,
+                        }),
+                    );
+                    let Some(export_pipeline) =
+                        pipeline_cache.get_compute_pipeline(*export_pipeline_id)
+                    else {
+                        error!(
+                            "Failed to find export pipeline #{} for effect {:?}, group {}",
+                            export_pipeline_id.id(),
+                            entity,
+                            group_index
+                        );
+                        continue;
+                    };
+
+                    let update_group_dispatch_buffer_offset =
+                        effects_meta.gpu_limits.dispatch_indirect_offset(
+                            first_update_group_dispatch_buffer_index.0 + (group_index as u32),
+                        );
+
+                    // for (effect_entity, effect_slice) in effects_meta.entity_map.iter() {
+                    // Retrieve the ExtractedEffect from the entity
+                    // trace!("effect_entity={:?} effect_slice={:?}", effect_entity,
+                    // effect_slice); let effect =
+                    // self.effect_query.get_manual(world, *effect_entity).unwrap();
+
+                    // Get the slice to update
+                    // let effect_slice = effects_meta.get(&effect_entity);
+                    // let effect_group =
+                    //     &effects_meta.effect_cache.buffers()[batch.buffer_index as usize];
+
+                    trace!(
+                        "record commands for update pipeline of effect {:?} \
+                        spawner_base={} update_group_dispatch_buffer_offset={}…",
+                        batches.handle,
+                        spawner_base,
+                        update_group_dispatch_buffer_offset
+                    );
+
+                    // Setup compute pass
+                    // compute_pass.set_pipeline(&effect_group.update_pipeline);
+                    compute_pass.set_pipeline(export_pipeline);
+                    compute_pass.set_bind_group(0, effect_cache.export_bind_group(), &[]);
+                    compute_pass.set_bind_group(1, particles_update_bind_group, &[]);
+                    compute_pass.set_bind_group(2, update_render_indirect_bind_group, &[]);
+
+                    if let Some(buffer) = effects_meta.dispatch_indirect_buffer.buffer() {
+                        trace!(
+                            "dispatch_workgroups_indirect: buffer={:?} offset={}",
+                            buffer,
+                            update_group_dispatch_buffer_offset
+                        );
+                        compute_pass.dispatch_workgroups_indirect(
+                            buffer,
+                            update_group_dispatch_buffer_offset as u64,
+                        );
+                        // TODO - offset
+                    }
+
+                    trace!("export compute dispatched");
+                    export_index += 1;
                 }
             }
         }
@@ -3978,13 +4362,15 @@ where
     for (object_index, object) in iterator.enumerate() {
         let buffer = buffer_table.insert(object);
         match first_buffer {
-            None => first_buffer = Some(buffer),
+            None => {
+                first_buffer = Some(buffer);
+            }
             Some(ref first_buffer) => {
-                if first_buffer.0 + object_index as u32 != buffer.0 {
+                if first_buffer.0 + (object_index as u32) != buffer.0 {
                     error!(
                         "Allocator didn't allocate sequential indices (expected {:?}, got {:?}). \
                         Expect trouble!",
-                        first_buffer.0 + object_index as u32,
+                        first_buffer.0 + (object_index as u32),
                         buffer.0
                     );
                 }
@@ -4024,7 +4410,7 @@ mod tests {
                 >= 256 * GpuRenderGroupIndirect::min_size().get()
         );
         assert!(
-            limits.dispatch_indirect_offset(256) as u64
+            (limits.dispatch_indirect_offset(256) as u64)
                 >= 256 * GpuDispatchIndirect::min_size().get()
         );
     }

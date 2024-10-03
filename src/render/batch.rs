@@ -58,6 +58,10 @@ pub(crate) struct EffectBatches {
     pub init_pipeline_id: CachedComputePipelineId,
     /// Update compute pipeline specialized for this batch.
     pub update_pipeline_ids: Vec<CachedComputePipelineId>,
+
+    pub export_pipeline_ids: Vec<CachedComputePipelineId>,
+
+    pub export_index: u32,
 }
 
 impl Index<u32> for EffectBatches {
@@ -82,8 +86,8 @@ pub(crate) struct EffectDrawBatch {
     pub batches_entity: Entity,
     /// For 2D rendering, the Z coordinate used as the sort key. Ignored for 3D
     /// rendering.
-    #[cfg(feature = "2d")]
-    pub z_sort_key_2d: FloatOrd,
+    // #[cfg(feature = "2d")]
+    // pub z_sort_key_2d: FloatOrd,
     /// For 3d rendering, the position of the emitter so we can compute distance
     /// to camera. Ignored for 2D rendering.
     #[cfg(feature = "3d")]
@@ -105,8 +109,10 @@ impl EffectBatches {
         effect_cache_id: EffectCacheId,
         init_pipeline_id: CachedComputePipelineId,
         update_pipeline_ids: Vec<CachedComputePipelineId>,
+        export_pipeline_ids: Vec<CachedComputePipelineId>,
         dispatch_buffer_indices: DispatchBufferIndices,
         first_particle_group_buffer_index: u32,
+        export_index: u32,
     ) -> EffectBatches {
         EffectBatches {
             buffer_index: input.effect_slices.buffer_index,
@@ -132,7 +138,9 @@ impl EffectBatches {
             render_shaders: input.effect_shader.render,
             init_pipeline_id,
             update_pipeline_ids,
+            export_pipeline_ids,
             entities: vec![input.entity.index()],
+            export_index,
         }
     }
 }
@@ -170,7 +178,6 @@ pub(crate) struct BatchesInput {
     /// Serialized property data.
     // FIXME - Contains a single effect's data; should handle multiple ones.
     pub property_data: Option<Vec<u8>>,
-    /// Sort key, for 2D only.
-    #[cfg(feature = "2d")]
-    pub z_sort_key_2d: FloatOrd,
+    // #[cfg(feature = "2d")]
+    // pub z_sort_key_2d: FloatOrd,
 }

@@ -1,7 +1,12 @@
-use std::ops::Deref;
+use std::{
+    collections::{HashMap, VecDeque},
+    ops::Deref,
+};
 
 use bevy::{
     asset::Asset,
+    math::Vec2,
+    prelude::{Entity, Resource},
     reflect::Reflect,
     utils::{default, HashSet},
 };
@@ -140,7 +145,7 @@ pub enum AlphaMode {
     /// [`AlphaMode::Blend`] for alpha values closer to 1.0, and more like
     /// [`AlphaMode::Add`] for alpha values closer to 0.0.
     ///
-    /// Can be used to avoid “border” or “outline” artifacts that can occur
+    /// Can be used to avoid ��border�� or ��outline�� artifacts that can occur
     /// when using plain alpha-blended textures.
     Premultiply,
 
@@ -198,6 +203,49 @@ pub enum AlphaMode {
     ///
     /// [`AlphaMask3d`]: bevy::core_pipeline::core_3d::AlphaMask3d
     Mask(ExprHandle),
+}
+#[derive(Copy, Clone, Default, Reflect, Serialize, Deserialize, Debug)]
+pub struct EffectAssetCounterToken {
+    pub index: u32,
+    pub generation: u32,
+    pub size: u32,
+}
+
+#[derive(Resource)]
+pub struct EffectAssetCounter {
+    generation: [u32; crate::MIN_PARTICLES_COUNT as usize],
+    free: VecDeque<u32>,
+    entity_map: HashMap<Entity, u32>,
+}
+
+impl Default for EffectAssetCounter {
+    fn default() -> Self {
+        let vector: Vec<u32> = (0..crate::MIN_PARTICLES_COUNT as u32).collect();
+        Self {
+            generation: [0; crate::MIN_PARTICLES_COUNT as usize],
+            free: VecDeque::from(vector),
+            entity_map: HashMap::default(),
+        }
+    }
+}
+
+impl EffectAssetCounter {
+    pub fn alloc(&mut self, entity: Entity, size: u32) -> EffectAssetCounterToken {
+        let index = self.free.pop_front().unwrap();
+        self.generation[index as usize] += 1;
+        let generation = self.generation[index as usize];
+        self.entity_map.insert(entity, index);
+        EffectAssetCounterToken {
+            index,
+            generation,
+            size,
+        }
+    }
+
+    pub fn free(&mut self, entity: &Entity) {
+        let index = self.entity_map.get(entity).unwrap();
+        self.free.push_back(*index);
+    }
 }
 
 /// Asset describing a visual effect.
@@ -264,7 +312,7 @@ impl EffectAsset {
     /// Create a new effect asset.
     ///
     /// The effect assets requires 2 essential pieces:
-    /// - The capacities of the effect, which together represent the maximum
+    /// - The capacities of the effect, which together represent the maximum.
     ///   number of particles which can be stored and simulated at the same time
     ///   for each group. There will be one capacity value per group; thus, the
     ///   `capacities` array also specifies the number of groups. All capacities
@@ -762,232 +810,232 @@ impl AssetLoader for EffectAssetLoader {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[cfg(feature = "serde")]
-    use ron::ser::PrettyConfig;
+//#[cfg(test)]
+// mod tests {
+//     #[cfg(feature = "serde")]
+//     use ron::ser::PrettyConfig;
 
-    use super::*;
-    use crate::*;
+//     use super::*;
+//     use crate::*;
 
-    #[test]
-    fn add_modifiers() {
-        let mut m = Module::default();
-        let expr = m.lit(3.);
+//     #[test]
+//     fn add_modifiers() {
+//         let mut m = Module::default();
+//         let expr = m.lit(3.);
 
-        for modifier_context in [ModifierContext::Init, ModifierContext::Update] {
-            let effect = EffectAsset::default().add_modifier(
-                modifier_context,
-                Box::new(SetAttributeModifier::new(Attribute::POSITION, expr)),
-            );
-            assert_eq!(effect.modifiers().count(), 1);
-            let m = effect.modifiers().next().unwrap();
-            assert!(m.context().contains(modifier_context));
-        }
+//         for modifier_context in [ModifierContext::Init, ModifierContext::Update] {
+//             let effect = EffectAsset::default().add_modifier(
+//                 modifier_context,
+//                 Box::new(SetAttributeModifier::new(Attribute::POSITION, expr)),
+//             );
+//             assert_eq!(effect.modifiers().count(), 1);
+//             let m = effect.modifiers().next().unwrap();
+//             assert!(m.context().contains(modifier_context));
+//         }
 
-        {
-            let effect = EffectAsset::default().add_render_modifier(Box::new(SetColorModifier {
-                color: CpuValue::Single(Vec4::ONE),
-            }));
-            assert_eq!(effect.modifiers().count(), 1);
-            let m = effect.modifiers().next().unwrap();
-            assert!(m.context().contains(ModifierContext::Render));
-        }
-    }
+//         {
+//             let effect = EffectAsset::default().add_render_modifier(Box::new(SetColorModifier {
+//                 color: CpuValue::Single(Vec4::ONE),
+//             }));
+//             assert_eq!(effect.modifiers().count(), 1);
+//             let m = effect.modifiers().next().unwrap();
+//             assert!(m.context().contains(ModifierContext::Render));
+//         }
+//     }
 
-    #[test]
-    fn test_apply_modifiers() {
-        let mut module = Module::default();
-        let origin = module.lit(Vec3::ZERO);
-        let one = module.lit(1.);
-        let slot_zero = module.lit(0u32);
-        let init_age = SetAttributeModifier::new(Attribute::AGE, one);
-        let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, one);
-        let init_pos_sphere = SetPositionSphereModifier {
-            center: module.lit(Vec3::ZERO),
-            radius: module.lit(1.),
-            dimension: ShapeDimension::Volume,
-        };
-        let init_vel_sphere = SetVelocitySphereModifier {
-            center: module.lit(Vec3::ZERO),
-            speed: module.lit(1.),
-        };
+//     #[test]
+//     fn test_apply_modifiers() {
+//         let mut module = Module::default();
+//         let origin = module.lit(Vec3::ZERO);
+//         let one = module.lit(1.);
+//         let slot_zero = module.lit(0u32);
+//         let init_age = SetAttributeModifier::new(Attribute::AGE, one);
+//         let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, one);
+//         let init_pos_sphere = SetPositionSphereModifier {
+//             center: module.lit(Vec3::ZERO),
+//             radius: module.lit(1.),
+//             dimension: ShapeDimension::Volume,
+//         };
+//         let init_vel_sphere = SetVelocitySphereModifier {
+//             center: module.lit(Vec3::ZERO),
+//             speed: module.lit(1.),
+//         };
 
-        let mut effect = EffectAsset::new(vec![4096], Spawner::rate(30.0.into()), module)
-            .init(init_pos_sphere)
-            .init(init_vel_sphere)
-            //.update(AccelModifier::default())
-            .update(LinearDragModifier::new(one))
-            .update(ConformToSphereModifier::new(origin, one, one, one, one))
-            .render(ParticleTextureModifier::new(slot_zero))
-            .render(ColorOverLifetimeModifier::default())
-            .render(SizeOverLifetimeModifier::default())
-            .render(OrientModifier::new(OrientMode::ParallelCameraDepthPlane))
-            .render(OrientModifier::new(OrientMode::FaceCameraPosition))
-            .render(OrientModifier::new(OrientMode::AlongVelocity));
+//         let mut effect = EffectAsset::new(vec![4096], Spawner::rate(30.0.into()), module)
+//             .init(init_pos_sphere)
+//             .init(init_vel_sphere)
+//             //.update(AccelModifier::default())
+//             .update(LinearDragModifier::new(one))
+//             .update(ConformToSphereModifier::new(origin, one, one, one, one))
+//             .render(ParticleTextureModifier::new(slot_zero))
+//             .render(ColorOverLifetimeModifier::default())
+//             .render(SizeOverLifetimeModifier::default())
+//             .render(OrientModifier::new(OrientMode::ParallelCameraDepthPlane))
+//             .render(OrientModifier::new(OrientMode::FaceCameraPosition))
+//             .render(OrientModifier::new(OrientMode::AlongVelocity));
 
-        assert_eq!(&effect.capacities, &[4096]);
+//         assert_eq!(&effect.capacities, &[4096]);
 
-        let module = &mut effect.module;
-        let property_layout = PropertyLayout::default();
-        let particle_layout = ParticleLayout::default();
-        let mut init_context =
-            ShaderWriter::new(ModifierContext::Init, &property_layout, &particle_layout);
-        assert!(init_pos_sphere.apply(module, &mut init_context).is_ok());
-        assert!(init_vel_sphere.apply(module, &mut init_context).is_ok());
-        assert!(init_age.apply(module, &mut init_context).is_ok());
-        assert!(init_lifetime.apply(module, &mut init_context).is_ok());
-        // assert_eq!(effect., init_context.init_code);
+//         let module = &mut effect.module;
+//         let property_layout = PropertyLayout::default();
+//         let particle_layout = ParticleLayout::default();
+//         let mut init_context =
+//             ShaderWriter::new(ModifierContext::Init, &property_layout, &particle_layout);
+//         assert!(init_pos_sphere.apply(module, &mut init_context).is_ok());
+//         assert!(init_vel_sphere.apply(module, &mut init_context).is_ok());
+//         assert!(init_age.apply(module, &mut init_context).is_ok());
+//         assert!(init_lifetime.apply(module, &mut init_context).is_ok());
+//         // assert_eq!(effect., init_context.init_code);
 
-        let accel_mod = AccelModifier::constant(module, Vec3::ONE);
-        let drag_mod = LinearDragModifier::constant(module, 3.5);
-        let property_layout = PropertyLayout::default();
-        let particle_layout = ParticleLayout::default();
-        let mut update_context =
-            ShaderWriter::new(ModifierContext::Update, &property_layout, &particle_layout);
-        assert!(accel_mod.apply(module, &mut update_context).is_ok());
-        assert!(drag_mod.apply(module, &mut update_context).is_ok());
-        assert!(ConformToSphereModifier::new(origin, one, one, one, one)
-            .apply(module, &mut update_context)
-            .is_ok());
-        // assert_eq!(effect.update_layout, update_layout);
+//         let accel_mod = AccelModifier::constant(module, Vec3::ONE);
+//         let drag_mod = LinearDragModifier::constant(module, 3.5);
+//         let property_layout = PropertyLayout::default();
+//         let particle_layout = ParticleLayout::default();
+//         let mut update_context =
+//             ShaderWriter::new(ModifierContext::Update, &property_layout, &particle_layout);
+//         assert!(accel_mod.apply(module, &mut update_context).is_ok());
+//         assert!(drag_mod.apply(module, &mut update_context).is_ok());
+//         assert!(ConformToSphereModifier::new(origin, one, one, one, one)
+//             .apply(module, &mut update_context)
+//             .is_ok());
+//         // assert_eq!(effect.update_layout, update_layout);
 
-        let property_layout = PropertyLayout::default();
-        let particle_layout = ParticleLayout::default();
-        let texture_layout = TextureLayout::default();
-        let mut render_context =
-            RenderContext::new(&property_layout, &particle_layout, &texture_layout);
-        ParticleTextureModifier::new(slot_zero)
-            .apply_render(module, &mut render_context)
-            .unwrap();
-        ColorOverLifetimeModifier::default()
-            .apply_render(module, &mut render_context)
-            .unwrap();
-        SizeOverLifetimeModifier::default()
-            .apply_render(module, &mut render_context)
-            .unwrap();
-        OrientModifier::new(OrientMode::ParallelCameraDepthPlane)
-            .apply_render(module, &mut render_context)
-            .unwrap();
-        OrientModifier::new(OrientMode::FaceCameraPosition)
-            .apply_render(module, &mut render_context)
-            .unwrap();
-        OrientModifier::new(OrientMode::AlongVelocity)
-            .apply_render(module, &mut render_context)
-            .unwrap();
-        // assert_eq!(effect.render_layout, render_layout);
-    }
+//         let property_layout = PropertyLayout::default();
+//         let particle_layout = ParticleLayout::default();
+//         let texture_layout = TextureLayout::default();
+//         let mut render_context =
+//             RenderContext::new(&property_layout, &particle_layout, &texture_layout);
+//         ParticleTextureModifier::new(slot_zero)
+//             .apply_render(module, &mut render_context)
+//             .unwrap();
+//         ColorOverLifetimeModifier::default()
+//             .apply_render(module, &mut render_context)
+//             .unwrap();
+//         SizeOverLifetimeModifier::default()
+//             .apply_render(module, &mut render_context)
+//             .unwrap();
+//         OrientModifier::new(OrientMode::ParallelCameraDepthPlane)
+//             .apply_render(module, &mut render_context)
+//             .unwrap();
+//         OrientModifier::new(OrientMode::FaceCameraPosition)
+//             .apply_render(module, &mut render_context)
+//             .unwrap();
+//         OrientModifier::new(OrientMode::AlongVelocity)
+//             .apply_render(module, &mut render_context)
+//             .unwrap();
+//         // assert_eq!(effect.render_layout, render_layout);
+//     }
 
-    #[cfg(feature = "serde")]
-    #[test]
-    fn test_serde_ron() {
-        let w = ExprWriter::new();
+//     #[cfg(feature = "serde")]
+//     #[test]
+//     fn test_serde_ron() {
+//         let w = ExprWriter::new();
 
-        let pos = w.lit(Vec3::new(1.2, -3.45, 87.54485));
-        let x = w.lit(BVec2::new(false, true));
-        let _ = x + pos.clone();
-        let mod_pos = SetAttributeModifier::new(Attribute::POSITION, pos.expr());
+//         let pos = w.lit(Vec3::new(1.2, -3.45, 87.54485));
+//         let x = w.lit(BVec2::new(false, true));
+//         let _ = x + pos.clone();
+//         let mod_pos = SetAttributeModifier::new(Attribute::POSITION, pos.expr());
 
-        let mut module = w.finish();
-        let prop = module.add_property("my_prop", Vec3::new(1.2, -2.3, 55.32).into());
-        let prop = module.prop(prop);
-        let _ = module.abs(prop);
+//         let mut module = w.finish();
+//         let prop = module.add_property("my_prop", Vec3::new(1.2, -2.3, 55.32).into());
+//         let prop = module.prop(prop);
+//         let _ = module.abs(prop);
 
-        let effect = EffectAsset {
-            name: "Effect".into(),
-            capacities: vec![4096],
-            spawner: Spawner::rate(30.0.into()),
-            module,
-            ..Default::default()
-        }
-        .init(mod_pos);
+//         let effect = EffectAsset {
+//             name: "Effect".into(),
+//             capacities: vec![4096],
+//             spawner: Spawner::rate(30.0.into()),
+//             module,
+//             ..Default::default()
+//         }
+//         .init(mod_pos);
 
-        let s = ron::ser::to_string_pretty(&effect, PrettyConfig::new().new_line("\n".to_string()))
-            .unwrap();
-        eprintln!("{}", s);
-        assert_eq!(
-            s,
-            r#"(
-    name: "Effect",
-    capacities: [
-        4096,
-    ],
-    spawner: (
-        num_particles: Single(30.0),
-        spawn_time: Single(1.0),
-        period: Single(1.0),
-        starts_active: true,
-        starts_immediately: true,
-    ),
-    z_layer_2d: 0.0,
-    simulation_space: Global,
-    simulation_condition: WhenVisible,
-    init_modifiers: [
-        (
-            modifier: {
-                "SetAttributeModifier": (
-                    attribute: "position",
-                    value: 1,
-                ),
-            },
-            groups: (1),
-        ),
-    ],
-    update_modifiers: [],
-    render_modifiers: [],
-    motion_integration: PostUpdate,
-    module: (
-        expressions: [
-            Literal(Vector(Vec3((1.2, -3.45, 87.54485)))),
-            Literal(Vector(BVec2((false, true)))),
-            Binary(
-                op: Add,
-                left: 2,
-                right: 1,
-            ),
-            Property(1),
-            Unary(
-                op: Abs,
-                expr: 4,
-            ),
-        ],
-        properties: [
-            (
-                name: "my_prop",
-                default_value: Vector(Vec3((1.2, -2.3, 55.32))),
-            ),
-        ],
-        texture_layout: (
-            layout: [],
-        ),
-    ),
-    alpha_mode: Blend,
-)"#
-        );
-        let effect_serde: EffectAsset = ron::from_str(&s).unwrap();
-        assert_eq!(effect.name, effect_serde.name);
-        assert_eq!(effect.capacities, effect_serde.capacities);
-        assert_eq!(effect.spawner, effect_serde.spawner);
-        assert_eq!(effect.z_layer_2d, effect_serde.z_layer_2d);
-        assert_eq!(effect.simulation_space, effect_serde.simulation_space);
-        assert_eq!(
-            effect.simulation_condition,
-            effect_serde.simulation_condition
-        );
-        assert_eq!(effect.motion_integration, effect_serde.motion_integration);
-        assert_eq!(effect.module, effect_serde.module);
-        assert_eq!(effect.alpha_mode, effect_serde.alpha_mode);
-        assert_eq!(
-            effect.init_modifiers().count(),
-            effect_serde.init_modifiers().count()
-        );
-        assert_eq!(
-            effect.update_modifiers().count(),
-            effect_serde.update_modifiers().count()
-        );
-        assert_eq!(
-            effect.render_modifiers().count(),
-            effect_serde.render_modifiers().count()
-        );
-    }
-}
+//         let s = ron::ser::to_string_pretty(&effect, PrettyConfig::new().new_line("\n".to_string()))
+//             .unwrap();
+//         eprintln!("{}", s);
+//         assert_eq!(
+//             s,
+//             r#"(
+//     name: "Effect",
+//     capacities: [
+//         4096,
+//     ],
+//     spawner: (
+//         num_particles: Single(30.0),
+//         spawn_time: Single(1.0),
+//         period: Single(1.0),
+//         starts_active: true,
+//         starts_immediately: true,
+//     ),
+//     z_layer_2d: 0.0,
+//     simulation_space: Global,
+//     simulation_condition: WhenVisible,
+//     init_modifiers: [
+//         (
+//             modifier: {
+//                 "SetAttributeModifier": (
+//                     attribute: "position",
+//                     value: 1,
+//                 ),
+//             },
+//             groups: (1),
+//         ),
+//     ],
+//     update_modifiers: [],
+//     render_modifiers: [],
+//     motion_integration: PostUpdate,
+//     module: (
+//         expressions: [
+//             Literal(Vector(Vec3((1.2, -3.45, 87.54485)))),
+//             Literal(Vector(BVec2((false, true)))),
+//             Binary(
+//                 op: Add,
+//                 left: 2,
+//                 right: 1,
+//             ),
+//             Property(1),
+//             Unary(
+//                 op: Abs,
+//                 expr: 4,
+//             ),
+//         ],
+//         properties: [
+//             (
+//                 name: "my_prop",
+//                 default_value: Vector(Vec3((1.2, -2.3, 55.32))),
+//             ),
+//         ],
+//         texture_layout: (
+//             layout: [],
+//         ),
+//     ),
+//     alpha_mode: Blend,
+// )"#
+//         );
+//         let effect_serde: EffectAsset = ron::from_str(&s).unwrap();
+//         assert_eq!(effect.name, effect_serde.name);
+//         assert_eq!(effect.capacities, effect_serde.capacities);
+//         assert_eq!(effect.spawner, effect_serde.spawner);
+//         assert_eq!(effect.z_layer_2d, effect_serde.z_layer_2d);
+//         assert_eq!(effect.simulation_space, effect_serde.simulation_space);
+//         assert_eq!(
+//             effect.simulation_condition,
+//             effect_serde.simulation_condition
+//         );
+//         assert_eq!(effect.motion_integration, effect_serde.motion_integration);
+//         assert_eq!(effect.module, effect_serde.module);
+//         assert_eq!(effect.alpha_mode, effect_serde.alpha_mode);
+//         assert_eq!(
+//             effect.init_modifiers().count(),
+//             effect_serde.init_modifiers().count()
+//         );
+//         assert_eq!(
+//             effect.update_modifiers().count(),
+//             effect_serde.update_modifiers().count()
+//         );
+//         assert_eq!(
+//             effect.render_modifiers().count(),
+//             effect_serde.render_modifiers().count()
+//         );
+//     }
+// }

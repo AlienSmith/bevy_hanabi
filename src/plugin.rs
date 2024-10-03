@@ -1,5 +1,5 @@
-#[cfg(feature = "2d")]
-use bevy::core_pipeline::core_2d::Transparent2d;
+//#[cfg(feature = "2d")]
+//use bevy::core_pipeline::core_2d::Transparent2d;
 #[cfg(feature = "3d")]
 use bevy::core_pipeline::core_3d::{AlphaMask3d, Transparent3d};
 use bevy::{
@@ -8,7 +8,7 @@ use bevy::{
         render_graph::RenderGraph,
         render_phase::DrawFunctions,
         render_resource::{SpecializedComputePipelines, SpecializedRenderPipelines},
-        renderer::{RenderAdapterInfo, RenderDevice},
+        renderer::{RenderAdapterInfo, RenderDevice, RenderQueue},
         view::{check_visibility, prepare_view_uniforms, visibility::VisibilitySystems},
         Render, RenderApp, RenderSet,
     },
@@ -16,15 +16,16 @@ use bevy::{
 };
 
 use crate::{
-    asset::EffectAsset,
+    asset::{EffectAsset, EffectAssetCounter},
     compile_effects, gather_removed_effects,
     properties::EffectProperties,
     render::{
         extract_effect_events, extract_effects, prepare_bind_groups, prepare_effects,
-        prepare_resources, queue_effects, DispatchIndirectPipeline, DrawEffects, EffectAssetEvents,
-        EffectBindGroups, EffectCache, EffectsMeta, ExtractedEffects, GpuDispatchIndirect,
-        GpuParticleGroup, GpuRenderEffectMetadata, GpuRenderGroupIndirect, GpuSpawnerParams,
-        ParticlesInitPipeline, ParticlesRenderPipeline, ParticlesUpdatePipeline, ShaderCache,
+        prepare_effects_add_remove, prepare_resources, queue_effects, DispatchIndirectPipeline,
+        DrawEffects, EffectAssetEvents, EffectBindGroups, EffectCache, EffectsMeta,
+        ExtractedEffects, GpuDispatchIndirect, GpuParticleGroup, GpuRenderEffectMetadata,
+        GpuRenderGroupIndirect, GpuSpawnerParams, ParticlesExportPipeline, ParticlesInitPipeline,
+        ParticlesRenderPipeline, ParticlesUpdatePipeline, ParticlesUtilityPipeline, ShaderCache,
         SimParams, StorageType as _, VfxSimulateDriverNode, VfxSimulateNode,
     },
     spawn::{self, Random},
@@ -40,6 +41,7 @@ use crate::asset::EffectAssetLoader;
 /// Labels for the Hanabi systems.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemSet)]
 pub enum EffectSystems {
+    BeforeCompile,
     /// Tick all effect instances to generate particle spawn counts.
     ///
     /// This system runs during the [`PostUpdate`] schedule. Any system which
@@ -157,6 +159,7 @@ impl HanabiPlugin {
                 &render_group_indirect_padding_code,
             )
             .replace("{{PARTICLE_GROUP_PADDING}}", &particle_group_padding_code);
+        warn!("Create common shader:\n{}", common_code);
         Shader::from_wgsl(
             common_code,
             std::path::Path::new(file!())
@@ -182,15 +185,18 @@ impl Plugin for HanabiPlugin {
             .add_event::<RemovedEffectsEvent>()
             .insert_resource(Random(spawn::new_rng()))
             .init_resource::<ShaderCache>()
+            .init_resource::<EffectAssetCounter>()
+            .init_asset_loader::<EffectAssetLoader>()
             .init_resource::<Time<EffectSimulation>>()
             .configure_sets(
                 PostUpdate,
                 (
+                    EffectSystems::BeforeCompile,
                     EffectSystems::TickSpawners
                         // This checks the visibility to skip work, so needs to run after
                         // ComputedVisibility was updated.
                         .after(VisibilitySystems::VisibilityPropagate),
-                    EffectSystems::CompileEffects,
+                    EffectSystems::CompileEffects.after(EffectSystems::BeforeCompile),
                     EffectSystems::GatherRemovedEffects,
                 ),
             )
@@ -234,6 +240,12 @@ impl Plugin for HanabiPlugin {
             .resource::<RenderDevice>()
             .clone();
 
+        let render_queue = app
+            .sub_app(RenderApp)
+            .world()
+            .resource::<RenderQueue>()
+            .clone();
+
         let adapter_name = app
             .world()
             .get_resource::<RenderAdapterInfo>()
@@ -261,7 +273,7 @@ impl Plugin for HanabiPlugin {
         }
 
         let effects_meta = EffectsMeta::new(render_device.clone());
-        let effect_cache = EffectCache::new(render_device);
+        let effect_cache = EffectCache::new(render_device, render_queue);
 
         // Register the custom render pipeline
         let render_app = app.sub_app_mut(RenderApp);
@@ -271,9 +283,13 @@ impl Plugin for HanabiPlugin {
             .init_resource::<EffectBindGroups>()
             .init_resource::<DispatchIndirectPipeline>()
             .init_resource::<ParticlesInitPipeline>()
+            .init_resource::<ParticlesUtilityPipeline>()
             .init_resource::<SpecializedComputePipelines<ParticlesInitPipeline>>()
+            .init_resource::<SpecializedComputePipelines<ParticlesUtilityPipeline>>()
             .init_resource::<ParticlesUpdatePipeline>()
             .init_resource::<SpecializedComputePipelines<ParticlesUpdatePipeline>>()
+            .init_resource::<ParticlesExportPipeline>()
+            .init_resource::<SpecializedComputePipelines<ParticlesExportPipeline>>()
             .init_resource::<ParticlesRenderPipeline>()
             .init_resource::<SpecializedRenderPipelines<ParticlesRenderPipeline>>()
             .init_resource::<ExtractedEffects>()
@@ -294,7 +310,10 @@ impl Plugin for HanabiPlugin {
             .add_systems(
                 Render,
                 (
-                    prepare_effects.in_set(EffectSystems::PrepareEffectAssets),
+                    prepare_effects_add_remove.in_set(EffectSystems::PrepareEffectAssets),
+                    prepare_effects
+                        .in_set(EffectSystems::PrepareEffectAssets)
+                        .after(prepare_effects_add_remove),
                     queue_effects
                         .in_set(EffectSystems::QueueEffects)
                         .after(prepare_effects),
@@ -311,16 +330,16 @@ impl Plugin for HanabiPlugin {
         // during the main 2D/3D pass, at the Transparent2d/3d phase, after the
         // opaque objects have been rendered (or, rather, commands for those
         // have been recorded).
-        #[cfg(feature = "2d")]
-        {
-            let draw_particles = DrawEffects::new(render_app.world_mut());
-            render_app
-                .world()
-                .get_resource::<DrawFunctions<Transparent2d>>()
-                .unwrap()
-                .write()
-                .add(draw_particles);
-        }
+        //#[cfg(feature = "2d")]
+        //{
+        //    let draw_particles = DrawEffects::new(render_app.world_mut());
+        //    render_app
+        //        .world()
+        //        .get_resource::<DrawFunctions<Transparent2d>>()
+        //        .unwrap()
+        //        .write()
+        //        .add(draw_particles);
+        //}
         #[cfg(feature = "3d")]
         {
             let draw_particles = DrawEffects::new(render_app.world_mut());
