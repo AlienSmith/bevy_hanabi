@@ -5,7 +5,6 @@ use std::{
 
 use bevy::{
     asset::Asset,
-    math::Vec2,
     prelude::{Entity, Resource},
     reflect::Reflect,
     utils::{default, HashSet},

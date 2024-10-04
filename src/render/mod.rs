@@ -6,8 +6,8 @@ use std::{iter, marker::PhantomData};
 
 #[cfg(feature = "2d")]
 use bevy::core_pipeline::core_2d::Transparent2d;
-#[cfg(feature = "2d")]
-use bevy::math::FloatOrd;
+//#[cfg(feature = "2d")]
+//use bevy::math::FloatOrd;
 #[cfg(feature = "3d")]
 use bevy::{
     core_pipeline::{
@@ -3074,9 +3074,9 @@ pub(crate) fn queue_effects(
     read_params: QueueEffectsReadOnlyParams,
     msaa: Res<Msaa>,
     mut view_entities: Local<FixedBitSet>,
-    #[cfg(feature = "2d")] mut transparent_2d_render_phases: ResMut<
-        ViewSortedRenderPhases<Transparent2d>,
-    >,
+    // #[cfg(feature = "2d")] mut transparent_2d_render_phases: ResMut<
+    //     ViewSortedRenderPhases<Transparent2d>,
+    // >,
     #[cfg(feature = "3d")] mut transparent_3d_render_phases: ResMut<
         ViewSortedRenderPhases<Transparent3d>,
     >,

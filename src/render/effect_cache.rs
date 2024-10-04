@@ -101,7 +101,6 @@ pub struct ExportBuffer {
     pub buffer: Buffer,
     pub uniform: Buffer,
     staging_buffer: Buffer,
-    pub buffer_layout: BindGroupLayout,
     pub bind_group: BindGroup,
 }
 impl ExportBuffer {
@@ -216,7 +215,6 @@ impl ExportBuffer {
             buffer,
             uniform,
             staging_buffer,
-            buffer_layout,
             bind_group,
         }
     }
