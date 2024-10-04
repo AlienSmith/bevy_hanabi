@@ -25,7 +25,7 @@ use crate::{
         DrawEffects, EffectAssetEvents, EffectBindGroups, EffectCache, EffectsMeta,
         ExtractedEffects, GpuDispatchIndirect, GpuParticleGroup, GpuRenderEffectMetadata,
         GpuRenderGroupIndirect, GpuSpawnerParams, ParticlesExportPipeline, ParticlesInitPipeline,
-        ParticlesRenderPipeline, ParticlesUpdatePipeline, ParticlesUtilityPipeline, ShaderCache,
+        ParticlesRenderPipeline, ParticlesUpdatePipeline, ShaderCache,
         SimParams, StorageType as _, VfxSimulateDriverNode, VfxSimulateNode,
     },
     spawn::{self, Random},
@@ -283,9 +283,7 @@ impl Plugin for HanabiPlugin {
             .init_resource::<EffectBindGroups>()
             .init_resource::<DispatchIndirectPipeline>()
             .init_resource::<ParticlesInitPipeline>()
-            .init_resource::<ParticlesUtilityPipeline>()
             .init_resource::<SpecializedComputePipelines<ParticlesInitPipeline>>()
-            .init_resource::<SpecializedComputePipelines<ParticlesUtilityPipeline>>()
             .init_resource::<ParticlesUpdatePipeline>()
             .init_resource::<SpecializedComputePipelines<ParticlesUpdatePipeline>>()
             .init_resource::<ParticlesExportPipeline>()

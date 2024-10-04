@@ -727,44 +727,6 @@ impl SpecializedComputePipeline for ParticlesInitPipeline {
 }
 
 #[derive(Resource)]
-pub(crate) struct ParticlesUtilityPipeline {
-    _render_device: RenderDevice,
-    export_buffer_layout: BindGroupLayout,
-}
-
-impl FromWorld for ParticlesUtilityPipeline {
-    fn from_world(world: &mut World) -> Self {
-        let render_device = world.get_resource::<RenderDevice>().unwrap();
-
-        let export_buffer_layout = ExportBuffer::export_bind_group_layout(&render_device);
-        Self {
-            _render_device: render_device.clone(),
-            export_buffer_layout,
-        }
-    }
-}
-
-#[derive(Default, Clone, Hash, PartialEq, Eq)]
-pub(crate) struct ParticleUtilityPipelineKey {
-    shader: Handle<Shader>,
-}
-
-impl SpecializedComputePipeline for ParticlesUtilityPipeline {
-    type Key = ParticleUtilityPipelineKey;
-
-    fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
-        ComputePipelineDescriptor {
-            label: Some("hanabi: pipeline_utility_particles".into()),
-            layout: vec![self.export_buffer_layout.clone()],
-            shader: key.shader,
-            shader_defs: vec![],
-            entry_point: "main".into(),
-            push_constant_ranges: Vec::new(),
-        }
-    }
-}
-
-#[derive(Resource)]
 pub(crate) struct ParticlesExportPipeline {
     render_device: RenderDevice,
     render_indirect_layout: BindGroupLayout,
@@ -902,7 +864,6 @@ pub(crate) struct ParticlesUpdatePipeline {
     sim_params_layout: BindGroupLayout,
     spawner_buffer_layout: BindGroupLayout,
     render_indirect_layout: BindGroupLayout,
-    export_buffer_layout: BindGroupLayout,
 }
 
 impl FromWorld for ParticlesUpdatePipeline {
@@ -989,15 +950,11 @@ impl FromWorld for ParticlesUpdatePipeline {
                 },
             ],
         );
-
-        let export_buffer_layout = ExportBuffer::export_bind_group_layout(&render_device);
-
         Self {
             render_device: render_device.clone(),
             sim_params_layout,
             spawner_buffer_layout,
             render_indirect_layout,
-            export_buffer_layout,
         }
     }
 }
@@ -2263,14 +2220,9 @@ impl Default for LayoutFlags {
 pub(crate) fn prepare_effects_add_remove(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
-    pipeline_cache: Res<PipelineCache>,
     dispatch_indirect_pipeline: Res<DispatchIndirectPipeline>,
     mut effect_cache: ResMut<EffectCache>,
     mut extracted_effects: ResMut<ExtractedEffects>,
-    utility_pipeline: Res<ParticlesUtilityPipeline>,
-    mut specialized_utility_pipelines: ResMut<
-        SpecializedComputePipelines<ParticlesUtilityPipeline>,
-    >,
     mut effects_meta: ResMut<EffectsMeta>,
     mut effect_bind_groups: ResMut<EffectBindGroups>,
 ) {
@@ -2304,17 +2256,6 @@ pub(crate) fn prepare_effects_add_remove(
         &mut effect_bind_groups,
         &mut effect_cache,
     );
-
-    if effect_cache.utility_pipeline_id.is_none() {
-        let utility_pipeline_id = specialized_utility_pipelines.specialize(
-            &pipeline_cache,
-            &utility_pipeline,
-            ParticleUtilityPipelineKey {
-                shader: extracted_effects.utility.utility_shader.clone().unwrap(),
-            },
-        );
-        effect_cache.utility_pipeline_id = Some(utility_pipeline_id);
-    }
 }
 
 pub(crate) fn prepare_effects(
