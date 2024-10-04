@@ -1096,7 +1096,6 @@ impl SpecializedComputePipeline for ParticlesUpdatePipeline {
                 update_particles_buffer_layout,
                 self.spawner_buffer_layout.clone(),
                 self.render_indirect_layout.clone(),
-                self.export_buffer_layout.clone(),
             ],
             shader: key.shader,
             shader_defs: vec!["REM_MAX_SPAWN_ATOMIC".into()],
@@ -4088,14 +4087,21 @@ impl Node for VfxSimulateNode {
                 );
             }
         }
+        let mut effects_sorted: Vec<(Entity, &EffectBatches)> =
+            self.effect_query.iter_manual(world).collect();
+        effects_sorted.sort_by(|(_, batch_a), (_, batch_b)| {
+            batch_a
+                .export_index
+                .partial_cmp(&batch_b.export_index)
+                .unwrap()
+        });
         //clear buffer here to allow particle counts to reduce
         effect_cache.clear_buffer(render_context.command_encoder());
         // Compute update pass
         {
             // Dispatch update compute jobs
-            for (entity, batches) in self.effect_query.iter_manual(world) {
+            for (entity, batches) in &effects_sorted {
                 let effect_cache_id = batches.effect_cache_id;
-
                 let Some(particles_update_bind_group) =
                     effect_cache.update_bind_group(effect_cache_id)
                 else {
@@ -4129,11 +4135,9 @@ impl Node for VfxSimulateNode {
                     );
                     continue;
                 };
-                let mut export_index = batches.export_index as u64;
                 for (group_index, update_pipeline_id) in
                     batches.update_pipeline_ids.iter().enumerate()
                 {
-                    effect_cache.update_uniform(render_context.command_encoder(), export_index);
                     let mut compute_pass = render_context.command_encoder().begin_compute_pass(
                         &(ComputePassDescriptor {
                             label: Some("hanabi:update"),
@@ -4196,7 +4200,6 @@ impl Node for VfxSimulateNode {
                         &[spawner_base * (spawner_buffer_aligned as u32)],
                     );
                     compute_pass.set_bind_group(3, update_render_indirect_bind_group, &[]);
-                    compute_pass.set_bind_group(4, effect_cache.export_bind_group(), &[]);
 
                     if let Some(buffer) = effects_meta.dispatch_indirect_buffer.buffer() {
                         trace!(
@@ -4212,30 +4215,14 @@ impl Node for VfxSimulateNode {
                     }
 
                     trace!("update compute dispatched");
-                    export_index += 1;
                 }
             }
         }
 
-        //Compute utility pass
-        if let Some(id) = effect_cache.utility_pipeline_id {
-            let mut compute_pass = render_context.command_encoder().begin_compute_pass(
-                &(ComputePassDescriptor {
-                    label: Some("hanabi:utility"),
-                    timestamp_writes: None,
-                }),
-            );
-            let pipeline = pipeline_cache.get_compute_pipeline(id).unwrap();
-            compute_pass.set_pipeline(pipeline);
-            compute_pass.set_bind_group(0, effect_cache.export_bind_group(), &[]);
-            //let workgroup_count = (_count + Self::UTILITY_WORKGROUP_SIZE - 1) / Self::UTILITY_WORKGROUP_SIZE;
-            let workgroup_count = 1;
-            compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
-        }
         // Compute export pass
         {
             // Dispatch export compute jobs
-            for (entity, batches) in self.effect_query.iter_manual(world) {
+            for (entity, batches) in &effects_sorted {
                 let effect_cache_id = batches.effect_cache_id;
 
                 let Some(particles_update_bind_group) =

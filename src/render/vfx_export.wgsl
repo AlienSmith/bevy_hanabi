@@ -37,7 +37,8 @@ fn get_camera_rotation_effect_space() -> mat3x3<f32> {{ return mat3x3<f32>(); }}
 fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
     let thread_index = global_invocation_id.x;
     let start = select( export_buffer[uniform_index - 1u], 0u, uniform_index == 0u);
-    let thread_size = export_buffer[uniform_index] - start;
+    let thread_size = atomicLoad(&render_group_indirect[{{GROUP_INDEX}}].alive_count);
+    export_buffer[uniform_index] = start + thread_size;
 
     if thread_index >= thread_size {
         return;
