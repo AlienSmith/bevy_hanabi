@@ -19,7 +19,7 @@ struct ParticleBuffer {
 {{PROPERTIES}}
 
 @group(0) @binding(0) var<storage, read_write> export_buffer : array<u32>;
-@group(0) @binding(1) var<uniform> uniform_index : u32;
+@group(0) @binding(1) var<uniform> uniform_index_input : u32;
 @group(1) @binding(0) var<storage, read_write> particle_buffer : ParticleBuffer;
 @group(1) @binding(1) var<storage, read_write> indirect_buffer : IndirectBuffer;
 @group(1) @binding(2) var<storage, read> particle_groups : array<ParticleGroup>;
@@ -36,6 +36,7 @@ fn get_camera_rotation_effect_space() -> mat3x3<f32> {{ return mat3x3<f32>(); }}
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
     let thread_index = global_invocation_id.x;
+    let uniform_index = uniform_index_input >> 6u;
     let start = select( export_buffer[uniform_index - 1u], 0u, uniform_index == 0u);
     let thread_size = atomicLoad(&render_group_indirect[{{GROUP_INDEX}}].alive_count);
     export_buffer[uniform_index] = start + thread_size;

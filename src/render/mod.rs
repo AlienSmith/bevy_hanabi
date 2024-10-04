@@ -1671,7 +1671,7 @@ pub(crate) fn extract_effects(
                 property_layout,
                 effect.layout_flags
             );
-            println!("added_effect {}", effect.export_token.index);
+            //println!("added_effect {}", effect.export_token.index);
             Some(AddedEffect {
                 entity,
                 capacities: asset.capacities().to_vec(),
@@ -4040,6 +4040,12 @@ impl Node for VfxSimulateNode {
         effect_cache.clear_buffer(render_context.command_encoder());
         // Compute update pass
         {
+            let mut compute_pass = render_context.command_encoder().begin_compute_pass(
+                &(ComputePassDescriptor {
+                    label: Some("hanabi:update"),
+                    timestamp_writes: None,
+                }),
+            );
             // Dispatch update compute jobs
             for (entity, batches) in &effects_sorted {
                 let effect_cache_id = batches.effect_cache_id;
@@ -4079,12 +4085,6 @@ impl Node for VfxSimulateNode {
                 for (group_index, update_pipeline_id) in
                     batches.update_pipeline_ids.iter().enumerate()
                 {
-                    let mut compute_pass = render_context.command_encoder().begin_compute_pass(
-                        &(ComputePassDescriptor {
-                            label: Some("hanabi:update"),
-                            timestamp_writes: None,
-                        }),
-                    );
                     let Some(update_pipeline) =
                         pipeline_cache.get_compute_pipeline(*update_pipeline_id)
                     else {
@@ -4162,6 +4162,12 @@ impl Node for VfxSimulateNode {
 
         // Compute export pass
         {
+            let mut compute_pass = render_context.command_encoder().begin_compute_pass(
+                &(ComputePassDescriptor {
+                    label: Some("hanabi:export"),
+                    timestamp_writes: None,
+                }),
+            );
             // Dispatch export compute jobs
             for (entity, batches) in &effects_sorted {
                 let effect_cache_id = batches.effect_cache_id;
@@ -4203,13 +4209,7 @@ impl Node for VfxSimulateNode {
                 for (group_index, export_pipeline_id) in
                     batches.export_pipeline_ids.iter().enumerate()
                 {
-                    effect_cache.update_uniform(render_context.command_encoder(), export_index);
-                    let mut compute_pass = render_context.command_encoder().begin_compute_pass(
-                        &(ComputePassDescriptor {
-                            label: Some("hanabi:export"),
-                            timestamp_writes: None,
-                        }),
-                    );
+                    //effect_cache.update_uniform(render_context.command_encoder(), export_index);
                     let Some(export_pipeline) =
                         pipeline_cache.get_compute_pipeline(*export_pipeline_id)
                     else {
@@ -4249,7 +4249,11 @@ impl Node for VfxSimulateNode {
                     // Setup compute pass
                     // compute_pass.set_pipeline(&effect_group.update_pipeline);
                     compute_pass.set_pipeline(export_pipeline);
-                    compute_pass.set_bind_group(0, effect_cache.export_bind_group(), &[]);
+                    compute_pass.set_bind_group(
+                        0,
+                        effect_cache.export_bind_group(),
+                        &[(export_index * ExportBuffer::MIN_UNIFORM_SIZE) as u32],
+                    );
                     compute_pass.set_bind_group(1, particles_update_bind_group, &[]);
                     compute_pass.set_bind_group(2, update_render_indirect_bind_group, &[]);
 

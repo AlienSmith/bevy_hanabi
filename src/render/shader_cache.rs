@@ -35,6 +35,7 @@ impl ShaderCache {
         source: &str,
         shaders: &mut ResMut<Assets<Shader>>,
     ) -> Handle<Shader> {
+        //println!("cache size {}", self.cache.len());
         if let Some(handle) = self.cache.get(source) {
             handle.clone()
         } else {

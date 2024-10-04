@@ -918,7 +918,7 @@ impl EffectShaderSource {
                 "{{SIMULATION_SPACE_TRANSFORM_PARTICLE}}",
                 &init_sim_space_transform_code,
             );
-        warn!("Configured init shader:\n{}", init_shader_source);
+        trace!("Configured init shader:\n{}", init_shader_source);
 
         let mut layout_flags = LayoutFlags::NONE;
         if asset.simulation_space == SimulationSpace::Local {
@@ -1103,7 +1103,7 @@ impl EffectShaderSource {
                 .replace("{{PROPERTIES}}", &properties_code)
                 .replace("{{PROPERTIES_BINDING}}", &properties_binding_code)
                 .replace("{{GROUP_INDEX}}", &group_index_code);
-            warn!("Configured update shader:\n{}", update_shader_source);
+            trace!("Configured update shader:\n{}", update_shader_source);
 
             // Configure the render shader template, and make sure a corresponding shader
             // asset exists
@@ -1117,7 +1117,7 @@ impl EffectShaderSource {
                 .replace("{{ALPHA_CUTOFF}}", &alpha_cutoff_code)
                 .replace("{{FLIPBOOK_SCALE}}", &flipbook_scale_code)
                 .replace("{{FLIPBOOK_ROW_COUNT}}", &flipbook_row_count_code);
-            warn!("Configured render shader:\n{}", render_shader_source);
+            trace!("Configured render shader:\n{}", render_shader_source);
 
             let export_shader_source = PARTICLES_EXPORT_SHADER_TEMPLATE
                 .replace("{{ATTRIBUTES}}", &attributes_code)
@@ -1128,7 +1128,7 @@ impl EffectShaderSource {
                 .replace("{{PROPERTIES_BINDING}}", &properties_binding_code)
                 .replace("{{GROUP_INDEX}}", &group_index_code);
 
-            warn!("Configured export shader:\n{}", export_shader_source);
+            trace!("Configured export shader:\n{}", export_shader_source);
 
             update_shader_sources.push(update_shader_source);
             render_shader_sources.push(render_shader_source);

@@ -99,15 +99,13 @@ impl SliceRef {
 /// Storage for buffer to export.
 pub struct ExportBuffer {
     pub buffer: Buffer,
-    pub uniform: Buffer,
-    staging_buffer: Buffer,
     pub bind_group: BindGroup,
 }
 impl ExportBuffer {
     //16 MB of export buffer (256 particles with 2048 instance each)
     //TODO: make it dynamic sized
     pub const MIN_BUFFER_SIZE: u64 = 2 << 23;
-    pub const MIN_UNIFORM_SIZE: u64 = 4;
+    pub const MIN_UNIFORM_SIZE: u64 = 256;
     pub fn export_bind_group_layout(render_device: &RenderDevice) -> BindGroupLayout {
         let label = Some("export");
         let export_buffer_size = NonZeroU64::new(Self::MIN_BUFFER_SIZE);
@@ -129,24 +127,13 @@ impl ExportBuffer {
                 visibility: ShaderStages::COMPUTE,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
+                    has_dynamic_offset: true,
                     min_binding_size: export_uniform_size,
                 },
                 count: None,
             },
         ];
         render_device.create_bind_group_layout(label, &entries)
-    }
-
-    //we need to use copy_buffer_to_buffer cause queue.write_buffer won't update between dispatches
-    pub fn update_uniform(&self, encoder: &mut CommandEncoder, index: u64) {
-        encoder.copy_buffer_to_buffer(
-            &self.staging_buffer,
-            index * Self::MIN_UNIFORM_SIZE,
-            &self.uniform,
-            0,
-            Self::MIN_UNIFORM_SIZE,
-        );
     }
 
     pub fn clear_buffer(&self, encoder: &mut CommandEncoder) {
@@ -166,21 +153,17 @@ impl ExportBuffer {
             mapped_at_creation: false,
         });
 
+        let uniform_size = MIN_PARTICLES_COUNT * Self::MIN_UNIFORM_SIZE;
         let uniform = render_device.create_buffer(&BufferDescriptor {
             label: Some("particle index"),
-            size: Self::MIN_BUFFER_SIZE,
+            size: uniform_size,
             usage: BufferUsages::COPY_DST | BufferUsages::UNIFORM,
             mapped_at_creation: false,
         });
+        let vector: Vec<u32> =
+            (0..(MIN_PARTICLES_COUNT * (Self::MIN_UNIFORM_SIZE / 4)) as u32).collect();
+        render_queue.write_buffer(&uniform, 0, bytemuck::cast_slice(&vector));
 
-        let staging_buffer = render_device.create_buffer(&BufferDescriptor {
-            label: Some("particle index"),
-            size: MIN_PARTICLES_COUNT * Self::MIN_UNIFORM_SIZE,
-            usage: BufferUsages::COPY_DST | BufferUsages::COPY_SRC | BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
-        let vector: Vec<u32> = (0..MIN_PARTICLES_COUNT as u32).collect();
-        render_queue.write_buffer(&staging_buffer, 0, bytemuck::cast_slice(&vector));
         let buffer_layout = Self::export_bind_group_layout(render_device);
 
         let buffer_binding = BufferBinding {
@@ -211,12 +194,7 @@ impl ExportBuffer {
             &buffer_layout,
             &bindings,
         );
-        Self {
-            buffer,
-            uniform,
-            staging_buffer,
-            bind_group,
-        }
+        Self { buffer, bind_group }
     }
 }
 /// Storage for a single kind of effects, sharing the same buffer(s).
@@ -996,10 +974,6 @@ impl EffectCache {
 
     pub fn export_bind_group(&self) -> &BindGroup {
         &self.exports.bind_group
-    }
-
-    pub fn update_uniform(&self, encoder: &mut CommandEncoder, index: u64) {
-        self.exports.update_uniform(encoder, index);
     }
 
     pub fn clear_buffer(&self, encoder: &mut CommandEncoder) {
