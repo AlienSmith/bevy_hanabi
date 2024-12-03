@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     modifier::{Modifier, RenderModifier},
-    ExprHandle, GroupedModifier, ModifierContext, Module, ParticleGroupSet, ParticleLayout,
-    Property, PropertyLayout, SimulationSpace, Spawner, TextureLayout,
+    EffectShaderSource, ExprHandle, GroupedModifier, ModifierContext, Module, ParticleGroupSet,
+    ParticleLayout, Property, PropertyLayout, SimulationSpace, Spawner, TextureLayout,
 };
 
 /// Type of motion integration applied to the particles of a system.
@@ -258,6 +258,11 @@ impl EffectAssetCounter {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[reflect(from_reflect = false)]
 pub struct EffectAsset {
+    #[reflect(ignore)]
+    shader_source: Option<EffectShaderSource>,
+
+    #[reflect(ignore)]
+    particle_layout: ParticleLayout,
     /// Display name of the effect.
     ///
     /// This has no internal use, and is mostly for the user to identify an
@@ -289,14 +294,17 @@ pub struct EffectAsset {
     pub simulation_condition: SimulationCondition,
     /// Init modifier defining the effect.
     #[reflect(ignore)]
+    #[serde(skip)]
     // TODO - Can't manage to implement FromReflect for BoxedModifier in a nice way yet
     init_modifiers: Vec<GroupedModifier>,
     /// update modifiers defining the effect.
     #[reflect(ignore)]
+    #[serde(skip)]
     // TODO - Can't manage to implement FromReflect for BoxedModifier in a nice way yet
     update_modifiers: Vec<GroupedModifier>,
     /// Render modifiers defining the effect.
     #[reflect(ignore)]
+    #[serde(skip)]
     // TODO - Can't manage to implement FromReflect for BoxedModifier in a nice way yet
     render_modifiers: Vec<GroupedModifier>,
     /// Type of motion integration applied to the particles of a system.
@@ -733,20 +741,7 @@ impl EffectAsset {
     /// currently existing particles, and return it as a newly allocated
     /// [`ParticleLayout`] object.
     pub fn particle_layout(&self) -> ParticleLayout {
-        // Build the set of unique attributes required for all modifiers
-        let mut set = HashSet::new();
-        for modifier in self.modifiers() {
-            for &attr in modifier.attributes() {
-                set.insert(attr);
-            }
-        }
-
-        // Build the layout
-        let mut layout = ParticleLayout::new();
-        for attr in set {
-            layout = layout.append(attr);
-        }
-        layout.build()
+        self.particle_layout.clone()
     }
 
     /// Build the property layout of the asset based on its properties.
@@ -761,6 +756,32 @@ impl EffectAsset {
     /// Get the texture layout of the module of this effect.
     pub fn texture_layout(&self) -> TextureLayout {
         self.module.texture_layout()
+    }
+
+    pub fn build(mut self) -> Self {
+        // Build the set of unique attributes required for all modifiers
+        let mut set = HashSet::new();
+        for modifier in self.modifiers() {
+            for &attr in modifier.attributes() {
+                set.insert(attr);
+            }
+        }
+
+        // Build the layout
+        let mut layout = ParticleLayout::new();
+        for attr in set {
+            layout = layout.append(attr);
+        }
+        self.particle_layout = layout.build();
+        self.shader_source = Some(EffectShaderSource::generate(&self).unwrap());
+        self.init_modifiers.clear();
+        self.update_modifiers.clear();
+        self.render_modifiers.clear();
+        self
+    }
+
+    pub fn get_shader_source(&self) -> EffectShaderSource {
+        self.shader_source.clone().unwrap()
     }
 }
 

@@ -47,6 +47,7 @@ use effect_cache::ExportBuffer;
 use fixedbitset::FixedBitSet;
 use naga_oil::compose::{Composer, NagaModuleDescriptor};
 use rand::random;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     asset::EffectAsset,
@@ -2194,7 +2195,7 @@ const QUAD_VERTEX_POSITIONS: &[Vec3] = &[
 
 bitflags! {
     /// Effect flags.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
     pub struct LayoutFlags: u32 {
         /// No flags.
         const NONE = 0;

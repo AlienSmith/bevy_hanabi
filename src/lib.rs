@@ -728,8 +728,8 @@ pub(crate) struct EffectShader {
 /// modifiers. The resulting source code is configured (the Hanabi variables
 /// `{{VARIABLE}}` are replaced by the relevant WGSL code) but is not
 /// specialized (the conditional directives like `#if` are still present).
-#[derive(Debug)]
-struct EffectShaderSource {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EffectShaderSource {
     pub init: String,
     pub update: Vec<String>,
     pub render: Vec<String>,
@@ -740,7 +740,7 @@ struct EffectShaderSource {
 /// Error resulting from the generating of the WGSL shader code of an
 /// [`EffectAsset`].
 #[derive(Debug, Error)]
-enum ShaderGenerateError {
+pub enum ShaderGenerateError {
     #[error("Expression error: {0:?}")]
     Expr(ExprError),
 
@@ -1259,16 +1259,17 @@ impl CompiledParticleEffect {
             return;
         }
 
-        let shader_source = match EffectShaderSource::generate(asset) {
-            Ok(shader_source) => shader_source,
-            Err(err) => {
-                error!(
-                    "Failed to generate shaders for effect asset {}: {:?}",
-                    asset.name, err
-                );
-                return;
-            }
-        };
+        // let shader_source = match EffectShaderSource::generate(asset) {
+        //     Ok(shader_source) => shader_source,
+        //     Err(err) => {
+        //         error!(
+        //             "Failed to generate shaders for effect asset {}: {:?}",
+        //             asset.name, err
+        //         );
+        //         return;
+        //     }
+        // };
+        let shader_source = asset.get_shader_source();
 
         self.layout_flags = shader_source.layout_flags;
         self.alpha_mode = asset.alpha_mode;

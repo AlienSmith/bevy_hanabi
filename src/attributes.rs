@@ -1251,7 +1251,7 @@ impl Attribute {
 }
 
 /// Layout for a single [`Attribute`] inside a [`ParticleLayout`].
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct AttributeLayout {
     pub attribute: Attribute,
     pub offset: u32,
@@ -1457,7 +1457,7 @@ impl From<&ParticleLayout> for ParticleLayoutBuilder {
 ///   the layout.
 ///
 /// [`build()`]: crate::ParticleLayoutBuilder::build
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ParticleLayout {
     layout: Vec<AttributeLayout>,
 }
