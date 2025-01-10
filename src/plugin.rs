@@ -25,8 +25,8 @@ use crate::{
         DrawEffects, EffectAssetEvents, EffectBindGroups, EffectCache, EffectsMeta,
         ExtractedEffects, GpuDispatchIndirect, GpuParticleGroup, GpuRenderEffectMetadata,
         GpuRenderGroupIndirect, GpuSpawnerParams, ParticlesExportPipeline, ParticlesInitPipeline,
-        ParticlesRenderPipeline, ParticlesUpdatePipeline, ShaderCache,
-        SimParams, StorageType as _, VfxSimulateDriverNode, VfxSimulateNode,
+        ParticlesRenderPipeline, ParticlesUpdatePipeline, ShaderCache, SimParams, StorageType as _,
+        VfxSimulateDriverNode, VfxSimulateNode,
     },
     spawn::{self, Random},
     tick_spawners,
@@ -159,7 +159,7 @@ impl HanabiPlugin {
                 &render_group_indirect_padding_code,
             )
             .replace("{{PARTICLE_GROUP_PADDING}}", &particle_group_padding_code);
-        warn!("Create common shader:\n{}", common_code);
+        //warn!("Create common shader:\n{}", common_code);
         Shader::from_wgsl(
             common_code,
             std::path::Path::new(file!())
